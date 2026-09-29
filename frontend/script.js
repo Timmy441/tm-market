@@ -1,6 +1,8 @@
 "use strict";
 
 document.addEventListener("DOMContentLoaded", () => {
+  // The full store UI only exists on index.html; other pages use the simple script below
+  if (!document.querySelector("#productGrid")) return;
   const products = [
     {id:"aurora-x1",name:"Aurora X1 Smartphone",category:"Electronics",price:89000,oldPrice:105000,rating:4.9,reviews:124,badge:"Best seller",stock:"In stock",newness:8,image:"assets/product-1.svg"},
     {id:"pulse-pro",name:"Pulse Pro Headphones",category:"Electronics",price:45000,oldPrice:56000,rating:4.8,reviews:87,badge:"20% off",stock:"Only 6 left",newness:7,image:"assets/product-2.svg"},
@@ -44,12 +46,12 @@ document.addEventListener("DOMContentLoaded", () => {
       card.innerHTML=`<div class="product-media">
         <span class="badge ${p.badge.includes("off")?"sale":""}">${p.badge}</span>
         <button class="heart ${wished?"active":""}" data-wish="${p.id}" aria-label="${wished?"Remove":"Add"} ${p.name} ${wished?"from":"to"} wishlist">${wished?"♥":"♡"}</button>
-        <img src="${p.image}" alt="${p.name}" loading="lazy">
+        <a href="product.html" aria-label="View ${p.name}"><img src="${p.image}" alt="${p.name}" loading="lazy"></a>
         <button class="quick-view" data-quick="${p.id}" type="button">Quick view</button>
       </div>
       <div class="product-info">
         <div class="product-meta"><span class="product-category">${p.category}</span><span class="stock">${p.stock}</span></div>
-        <h3>${p.name}</h3><div class="rating">★★★★★ <span>${p.rating} (${p.reviews})</span></div>
+        <h3><a href="product.html">${p.name}</a></h3><div class="rating">★★★★★ <span>${p.rating} (${p.reviews})</span></div>
         <div class="price-row"><div class="price">${money(p.price)} <span class="old-price">${money(p.oldPrice)}</span></div><button class="add-btn" data-add="${p.id}" type="button" aria-label="Add ${p.name} to cart">+</button></div>
       </div>`;
       grid.appendChild(card);
@@ -123,7 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
     grid.innerHTML="";
     wished.forEach(p=>{
       const card=document.createElement("article"); card.className="product-card";
-      card.innerHTML=`<div class="product-media"><span class="badge">Saved</span><button class="heart active" data-wish="${p.id}" aria-label="Remove ${p.name} from wishlist">♥</button><img src="${p.image}" alt="${p.name}" loading="lazy"><button class="quick-view" data-quick="${p.id}" type="button">Quick view</button></div><div class="product-info"><div class="product-meta"><span class="product-category">${p.category}</span><span class="stock">${p.stock}</span></div><h3>${p.name}</h3><div class="rating">★★★★★ <span>${p.rating} (${p.reviews})</span></div><div class="price-row"><div class="price">${money(p.price)}</div><button class="add-btn" data-add="${p.id}" type="button" aria-label="Add ${p.name} to cart">+</button></div></div>`;
+      card.innerHTML=`<div class="product-media"><span class="badge">Saved</span><button class="heart active" data-wish="${p.id}" aria-label="Remove ${p.name} from wishlist">♥</button><a href="product.html" aria-label="View ${p.name}"><img src="${p.image}" alt="${p.name}" loading="lazy"></a><button class="quick-view" data-quick="${p.id}" type="button">Quick view</button></div><div class="product-info"><div class="product-meta"><span class="product-category">${p.category}</span><span class="stock">${p.stock}</span></div><h3><a href="product.html">${p.name}</a></h3><div class="rating">★★★★★ <span>${p.rating} (${p.reviews})</span></div><div class="price-row"><div class="price">${money(p.price)}</div><button class="add-btn" data-add="${p.id}" type="button" aria-label="Add ${p.name} to cart">+</button></div></div>`;
       grid.appendChild(card);
     });
     document.querySelector("#shop").scrollIntoView({behavior:"smooth"});
@@ -179,3 +181,123 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#backTop").addEventListener("click",()=>scrollTo({top:0,behavior:"smooth"}));
   renderProducts();renderCart();
 });
+// --- Mock Product Database (Sellers + Affiliate Items) ---
+const products = [
+  {
+    id: 1,
+    title: "Aurora X1 Smartphone",
+    price: 120000,
+    seller: "Lagos Gadgets Hub",
+    isPartner: false,
+    category: "electronics",
+    image: "assets/product-1.svg"
+  },
+  {
+    id: 2,
+    title: "Wireless Noise-Canceling Earbuds",
+    price: 18500,
+    seller: "Jumia Partner",
+    isPartner: true,
+    affiliateUrl: "https://www.jumia.com.ng", // Add your affiliate link here
+    category: "electronics",
+    image: "assets/product-1.svg"
+  },
+  {
+    id: 3,
+    title: "Casual Designer Sneakers",
+    price: 25000,
+    seller: "Kicks Plug Abuja",
+    isPartner: false,
+    category: "fashion",
+    image: "assets/product-1.svg"
+  }
+];
+
+// --- Simple State Engine ---
+let cart = [];
+
+document.addEventListener("DOMContentLoaded", () => {
+  // 1. Render Products on products.html
+  const productGrid = document.querySelector(".product-grid");
+  if (productGrid && !document.querySelector("#productGrid")) {
+    renderProducts(products, productGrid);
+  }
+
+  // 2. Handle Vendor Form Submission (WhatsApp Onboarding)
+  const vendorForm = document.querySelector(".vendor-form");
+  if (vendorForm) {
+    vendorForm.addEventListener("submit", handleVendorSubmit);
+  }
+});
+
+// Function to render products dynamically
+function renderProducts(items, container) {
+  container.innerHTML = ""; // Clear existing placeholder HTML
+
+  items.forEach(product => {
+    const card = document.createElement("div");
+    card.className = "product-card";
+
+    // Format currency to Nigerian Naira
+    const formattedPrice = new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: "NGN",
+      maximumFractionDigits: 0
+    }).format(product.price);
+
+    // Conditional render based on whether it's an affiliate item or merchant item
+    const badgeText = product.isPartner ? "Partner Deal" : "Verified Merchant";
+    const badgeClass = product.isPartner ? "badge partner" : "badge";
+    const actionButton = product.isPartner
+      ? `<a href="${product.affiliateUrl}" target="_blank" class="btn-affiliate">Buy on Partner Store ↗</a>`
+      : `<button class="btn-cart" onclick="addToCart(${product.id})">Add to Bag</button>`;
+
+    card.innerHTML = `
+      <span class="${badgeClass}">${badgeText}</span>
+      <img src="${product.image}" alt="${product.title}">
+      <div>
+        <h4>${product.title}</h4>
+        <p class="seller-info">Sold by: <strong>${product.seller}</strong></p>
+        <p class="price">${formattedPrice}</p>
+      </div>
+      ${actionButton}
+    `;
+
+    container.appendChild(card);
+  });
+}
+
+// Function to handle merchant registration without a backend
+function handleVendorSubmit(event) {
+  event.preventDefault();
+  
+  const form = event.target;
+  const name = form.querySelector('input[placeholder*="John Doe"]').value;
+  const storeName = form.querySelector('input[placeholder*="Jay Fashion"]').value;
+  const phone = form.querySelector('input[type="tel"]').value;
+  const category = form.querySelector('select').value;
+
+  // Format message to send directly to your WhatsApp
+  const adminWhatsApp = "2347086049886";
+  const message = `Hello TM Market, I would like to register as a seller!%0A%0A*Name:* ${name}%0A*Store:* ${storeName}%0A*Phone:* ${phone}%0A*Category:* ${category}`;
+
+  // Redirect merchant to WhatsApp to send details
+  window.open(`https://wa.me/${adminWhatsApp}?text=${message}`, "_blank");
+}
+
+// Global Cart Functionality
+function addToCart(productId) {
+  const item = products.find(p => p.id === productId);
+  if (item) {
+    cart.push(item);
+    updateCartUI();
+  }
+}
+
+function updateCartUI() {
+  const cartButtons = document.querySelectorAll(".cart-btn");
+  cartButtons.forEach(btn => {
+    btn.textContent = `🛒 Bag (${cart.length})`;
+  });
+  alert("Item added to bag!");
+}
