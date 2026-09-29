@@ -3,6 +3,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   // The full store UI only exists on index.html; other pages use the simple script below
   if (!document.querySelector("#productGrid")) return;
+  const API_URL = 'https://tm-market-backend.fly.dev';
   const products = [
     {id:"aurora-x1",name:"Aurora X1 Smartphone",category:"Electronics",price:89000,oldPrice:105000,rating:4.9,reviews:124,badge:"Best seller",stock:"In stock",newness:8,image:"assets/product-1.svg"},
     {id:"pulse-pro",name:"Pulse Pro Headphones",category:"Electronics",price:45000,oldPrice:56000,rating:4.8,reviews:87,badge:"20% off",stock:"Only 6 left",newness:7,image:"assets/product-2.svg"},
