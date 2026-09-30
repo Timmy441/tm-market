@@ -1,62 +1,107 @@
-require('dotenv').config();
-const authRoutes = require('./src/routes/authRoutes');
-const productRoutes = require('./src/routes/productRoutes');
-const pool = require('./db');
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
-app.set('trust proxy', 1);
-app.use(helmet());
-app.use(cors());
+// Middleware
 app.use(express.json());
-app.use(morgan('dev'));
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100
-});
+const allowedOrigins = [
+  'http://localhost:5000',
+  'http://localhost:3000',
+  'http://127.0.0.1:5500',
+  'https://tm-market-pi.vercel.app'
+];
 
-app.use('/api', limiter);
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('CORS policy blocked this origin.'));
+    }
+  },
+  credentials: true
+}));
 
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: 'TM Market API is running'
-  });
-});
-app.use('/api/auth', authRoutes);
-app.use('/api/products', productRoutes);
-app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'TM Market backend is healthy'
-  });
-});
-app.get('/api/db-test', async (req, res) => {
+// MongoDB & Secrets
+const MONGO_URI = process.env.MONGO_URI;
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
+
+// Connect to MongoDB Atlas
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('Connected to MongoDB Atlas'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// User Model
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true }
+}, { timestamps: true });
+
+const User = mongoose.model('User', userSchema);
+
+// Registration Endpoint
+app.post('/api/register', async (req, res) => {
   try {
-    const result = await pool.query('SELECT current_database() AS database');
-    
-    res.json({
-      success: true,
-      message: 'PostgreSQL connection is working',
-      database: result.rows[0].database
-    });
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'All fields are required.' });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newUser = new User({ name, email, password: hashedPassword });
+    await newUser.save();
+
+    res.status(201).json({ message: 'User registered successfully!' });
   } catch (error) {
-    console.error('Database connection error:', error);
-    
-    res.status(500).json({
-      success: false,
-      message: 'PostgreSQL connection failed'
-    });
+    res.status(500).json({ message: 'Server error during registration.', error: error.message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`TM Market API running on http://localhost:${PORT}`);
+// Login Endpoint
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required.' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid credentials.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials.' });
+    }
+
+    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({
+      message: 'Login successful!',
+      token,
+      user: { id: user._id, name: user.name, email: user.email }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error during login.', error: error.message });
+  }
 });
+
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
