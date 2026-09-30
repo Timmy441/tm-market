@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./src/routes/authRoutes');
 const productRoutes = require('./src/routes/productRoutes');
 const sellerRoutes = require('./src/routes/sellerRoutes');
+const adminRoutes = require('./src/routes/adminRoutes');
 const { getCategories } = require('./src/controllers/productController');
 
 if (!process.env.JWT_SECRET) {
@@ -47,6 +48,14 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many attempts. Please try again in a few minutes.' }
 });
 
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests. Please slow down.' }
+});
+
 app.get('/api/health', (req, res) => res.json({ success: true }));
 
 // Same public paths as before: POST /api/register, POST /api/login (plus GET /api/me)
@@ -56,6 +65,7 @@ app.use('/api', authRoutes);
 app.get('/api/categories', getCategories);
 app.use('/api/products', productRoutes);
 app.use('/api/sellers', sellerRoutes);
+app.use('/api/admin', adminLimiter, adminRoutes);
 
 app.use((req, res) => res.status(404).json({ success: false, message: 'Not found' }));
 

@@ -21,6 +21,7 @@ const PRODUCT_SELECT = `
       p.location,
       p.status,
       p.seller_id,
+      su.is_active AS seller_active,
       sp.store_name AS seller_name,
       sp.location AS seller_location,
       i.quantity,
@@ -32,6 +33,7 @@ const PRODUCT_JOINS = `
      FROM products p
      LEFT JOIN categories c ON c.id = p.category_id
      LEFT JOIN seller_profiles sp ON sp.user_id = p.seller_id
+     LEFT JOIN users su ON su.id = p.seller_id
      LEFT JOIN inventory i ON i.product_id = p.id`;
 
 const FIRST_IMAGE = `(
@@ -43,7 +45,7 @@ const FIRST_IMAGE = `(
       ) AS image_url`;
 
 async function listProducts({ search, categoryId, categorySlug, location, minPrice, maxPrice, sort, featured, limit, offset }) {
-  const conditions = ["p.is_active = TRUE", "p.status = 'active'"];
+  const conditions = ["p.is_active = TRUE", "p.status = 'active'", "(p.seller_id IS NULL OR su.is_active = TRUE)"];
   const values = [];
 
   if (search) {
@@ -275,7 +277,8 @@ async function findProductContact(id) {
     `SELECT sp.store_name, sp.whatsapp
      FROM products p
      JOIN seller_profiles sp ON sp.user_id = p.seller_id
-     WHERE p.id = $1 AND p.status = 'active' AND p.is_active = TRUE
+     JOIN users su ON su.id = p.seller_id
+     WHERE p.id = $1 AND p.status = 'active' AND p.is_active = TRUE AND su.is_active = TRUE
      LIMIT 1`,
     [id]
   );

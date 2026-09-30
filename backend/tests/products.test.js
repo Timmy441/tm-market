@@ -6,7 +6,7 @@ let lastQuery = null;
 const modelPath = require.resolve('../src/models/productModel');
 require.cache[modelPath] = { id: modelPath, filename: modelPath, loaded: true, exports: {
   listProducts: async q => { lastQuery = q; return { products: [], total: 0 }; },
-  findProductById: async id => (id === 1 ? { id: 1, is_active: true, status: 'active' } : id === 2 ? { id: 2, is_active: true, status: 'removed' } : null),
+  findProductById: async id => (id === 1 ? { id: 1, is_active: true, status: 'active' } : id === 2 ? { id: 2, is_active: true, status: 'removed' } : id === 3 ? { id: 3, is_active: true, status: 'active', seller_active: false } : null),
   findProductContact: async id => (id === 1 ? { store_name: 'Ada Store', whatsapp: '+2348012345678' } : null),
   createProduct: async () => 1, updateProduct: async () => true, deactivateProduct: async () => true, listCategories: async () => []
 }};
@@ -31,6 +31,7 @@ test('removed / missing products are not public', async () => {
   assert.strictEqual((await call(c.getProduct, { params: { id: '1' } })).code, 200);
   assert.strictEqual((await call(c.getProduct, { params: { id: '2' } })).code, 404);
   assert.strictEqual((await call(c.getProduct, { params: { id: '99' } })).code, 404);
+  assert.strictEqual((await call(c.getProduct, { params: { id: '3' } })).code, 404); // seller suspended
 });
 
 test('seller contact lookup', async () => {

@@ -298,7 +298,7 @@ async function getProduct(req, res) {
 
     const product = await findProductById(id);
 
-    if (!product || !product.is_active || product.status !== 'active') {
+    if (!product || !product.is_active || product.status !== 'active' || product.seller_active === false) {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
