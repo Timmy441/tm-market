@@ -98,7 +98,33 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelector('#reg-password').value
     );
   });
+// Toggle Auth Modal
+const authModal = document.querySelector("#authModal");
+const openAuthBtn = document.querySelector("#openAuthBtn");
+const closeAuthBtn = document.querySelector("#closeAuthModal");
+const tabLoginBtn = document.querySelector("#tabLoginBtn");
+const tabRegisterBtn = document.querySelector("#tabRegisterBtn");
+const loginForm = document.querySelector("#login-form");
+const registerForm = document.querySelector("#register-form");
 
+if (openAuthBtn && authModal) {
+  openAuthBtn.addEventListener("click", () => authModal.removeAttribute("hidden"));
+  closeAuthBtn?.addEventListener("click", () => authModal.setAttribute("hidden", "true"));
+
+  tabLoginBtn?.addEventListener("click", () => {
+    tabLoginBtn.classList.add("active");
+    tabRegisterBtn.classList.remove("active");
+    loginForm.style.display = "block";
+    registerForm.style.display = "none";
+  });
+
+  tabRegisterBtn?.addEventListener("click", () => {
+    tabRegisterBtn.classList.add("active");
+    tabLoginBtn.classList.remove("active");
+    registerForm.style.display = "block";
+    loginForm.style.display = "none";
+  });
+}
   document.querySelector('#login-form')?.addEventListener('submit', e => {
     e.preventDefault();
     handleLogin(
