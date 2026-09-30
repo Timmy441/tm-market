@@ -21,17 +21,37 @@ const PROTECTED_PAGES = ['homepage', 'product', 'vendor-register'];
 const LOADER_MIN = { login: 3000, page: 600 };   // ms; minimum only for the login -> marketplace transition and page load
 const LOADER_FAILSAFE = 20000;                   // ms; loader can never stay up longer than this
 
-// --- Single Product Source of Truth ---
-const products = [
-  { id: "aurora-x1", name: "Aurora X1 Smartphone", category: "Electronics", price: 89000, oldPrice: 105000, rating: 4.9, reviews: 124, badge: "Best seller", stock: "In stock", newness: 8, image: "assets/product-1.svg", seller: "Lagos Gadgets Hub", isPartner: false },
-  { id: "pulse-pro", name: "Pulse Pro Headphones", category: "Electronics", price: 45000, oldPrice: 56000, rating: 4.8, reviews: 87, badge: "20% off", stock: "Only 6 left", newness: 7, image: "assets/product-2.svg", seller: "Jumia Partner", isPartner: true, affiliateUrl: "https://www.jumia.com.ng" },
-  { id: "streetflex", name: "StreetFlex Sneakers", category: "Fashion", price: 32000, oldPrice: 40000, rating: 4.7, reviews: 64, badge: "Trending", stock: "In stock", newness: 6, image: "assets/product-3.svg", seller: "Kicks Plug Abuja", isPartner: false },
-  { id: "nova-bag", name: "Nova Everyday Bag", category: "Fashion", price: 18500, oldPrice: 23000, rating: 4.8, reviews: 53, badge: "Popular", stock: "In stock", newness: 5, image: "assets/product-4.svg", seller: "TM Collection", isPartner: false },
-  { id: "chrono-watch", name: "Chrono Smart Watch", category: "Accessories", price: 56000, oldPrice: 65000, rating: 4.6, reviews: 41, badge: "New", stock: "In stock", newness: 10, image: "assets/product-5.svg", seller: "TM Collection", isPartner: false },
-  { id: "sounddock", name: "SoundDock Mini", category: "Electronics", price: 27000, oldPrice: 32000, rating: 4.7, reviews: 38, badge: "20% off", stock: "In stock", newness: 9, image: "assets/product-6.svg", seller: "TM Collection", isPartner: false },
-  { id: "cloudfit", name: "CloudFit Hoodie", category: "Fashion", price: 24000, oldPrice: 29000, rating: 4.9, reviews: 72, badge: "New", stock: "In stock", newness: 11, image: "assets/product-7.svg", seller: "TM Collection", isPartner: false },
-  { id: "pixel-pro", name: "Pixel Pro Camera", category: "Home", price: 125000, oldPrice: 145000, rating: 4.8, reviews: 29, badge: "Pro pick", stock: "Only 3 left", newness: 4, image: "assets/product-8.svg", seller: "TM Collection", isPartner: false }
-];
+// --- Products come from the backend (GET /api/products). Nothing is hardcoded. ---
+const products = [];
+const PLACEHOLDER_IMG = 'assets/logo.svg';
+
+function mapProduct(r) {
+  const qty = r.quantity === null || r.quantity === undefined ? null : Number(r.quantity);
+  const available = r.available !== false && (r.status || 'active') === 'active' && (qty === null || qty > 0);
+  let stock = 'In stock';
+  if (!available) stock = r.status === 'sold' ? 'Sold' : 'Sold out';
+  else if (qty !== null && qty <= 5) stock = `Only ${qty} left`;
+  const price = Number(r.price);
+  const cmp = r.compare_at_price ? Number(r.compare_at_price) : null;
+  const images = (r.images || []).map(i => i.image_url).filter(Boolean);
+  return {
+    id: String(r.id), name: r.name || '', category: r.category_name || 'Other',
+    price, oldPrice: cmp && cmp > price ? cmp : null,
+    image: r.image_url || images[0] || PLACEHOLDER_IMG, images,
+    description: r.description || '', seller: r.seller_name || '', location: r.location || r.seller_location || '',
+    available, stock, badge: available ? '' : stock, quantity: qty
+  };
+}
+
+// Only numeric ids are real products. Drop leftovers from the old demo catalogue.
+function purgeLegacyDemoState() {
+  for (const k of ['tm-market-cart', 'tm-market-wishlist']) {
+    const arr = load(k, []);
+    if (!Array.isArray(arr)) { save(k, []); continue; }
+    const clean = arr.filter(x => /^\d+$/.test(String(x && typeof x === 'object' ? x.id : x)));
+    if (clean.length !== arr.length) save(k, clean);
+  }
+}
 
 /* ---------- small helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -473,7 +493,7 @@ function initLandingGate() {
 /* ---------- storefront (grid, cart, wishlist, checkout) ---------- */
 function initStorefront() {
   const state = {
-    filter: "All", query: "", sort: "featured", onlyWishlist: false,
+    filter: "All", query: "", sort: "newest", onlyWishlist: false, page: 1, total: 0, timer: null,
     cart: load("tm-market-cart", []),
     wishlist: load("tm-market-wishlist", []),
     coupon: null
@@ -481,42 +501,108 @@ function initStorefront() {
   const preview = Number(document.body.dataset.preview || 0);   // landing page shows a small read-only preview
   const product = id => products.find(p => p.id === id || p.id === Number(id));
 
-  function filteredProducts() {
-    let list = products.filter(p => (state.filter === "All" || p.category === state.filter) && (!state.onlyWishlist || state.wishlist.includes(p.id)) && (!state.query || `${p.name} ${p.category}`.toLowerCase().includes(state.query)));
-    const sort = { "price-low": (a, b) => a.price - b.price, "price-high": (a, b) => b.price - a.price, "rating": (a, b) => b.rating - a.rating, "newest": (a, b) => b.newness - a.newness };
-    if (sort[state.sort]) list.sort(sort[state.sort]);
-    return preview ? list.slice(0, preview) : list;
+  const SORT_MAP = { newest: "newest", "price-low": "price_asc", "price-high": "price_desc" };
+  const PAGE_SIZE = preview || 12;
+  let reqId = 0;
+
+  async function loadWishlistProducts() {
+    const found = await Promise.all(state.wishlist.map(id =>
+      apiRequest("GET", `/api/products/${encodeURIComponent(id)}`)
+        .then(d => mapProduct(d.product))
+        .catch(e => (e.status === 404 ? null : Promise.reject(e)))));
+    const items = found.filter(p => p && p.available !== undefined);
+    state.wishlist = items.map(p => p.id);          // products that no longer exist drop out of the wishlist
+    save("tm-market-wishlist", state.wishlist);
+    return items;
+  }
+
+  async function loadProducts(reset = true) {
+    const grid = $("#productGrid");
+    if (!grid) return;
+    const mine = ++reqId;
+    if (reset) {
+      state.page = 1;
+      grid.innerHTML = '<p class="grid-status">Loading products…</p>';
+      if ($("#noResults")) $("#noResults").hidden = true;
+      if ($("#loadMore")) $("#loadMore").hidden = true;
+    } else state.page++;
+    if ($("#loadMore")) $("#loadMore").disabled = true;
+    try {
+      let items, total;
+      if (state.onlyWishlist) { items = await loadWishlistProducts(); total = items.length; }
+      else {
+        const q = new URLSearchParams({ limit: PAGE_SIZE, page: state.page, sort: SORT_MAP[state.sort] || "newest" });
+        if (state.query) q.set("search", state.query);
+        if (state.filter !== "All") q.set("category", state.filter.toLowerCase());
+        const data = await apiRequest("GET", `/api/products?${q}`);
+        items = data.products.map(mapProduct);
+        total = data.pagination ? data.pagination.total : items.length;
+      }
+      if (mine !== reqId) return;                    // a newer search already replaced this one
+      if (reset || state.onlyWishlist) products.splice(0, products.length, ...items);
+      else products.push(...items);
+      state.total = total;
+      renderProducts();
+    } catch (err) {
+      if (mine !== reqId) return;
+      if (reset) grid.innerHTML = `<p class="grid-status is-error">${esc(err.message)} <button type="button" class="link-btn" id="retryProducts">Try again</button></p>`;
+      else { state.page--; toast(err.message, 4000); }
+      if ($("#loadMore")) $("#loadMore").disabled = false;
+    }
   }
 
   function renderProducts() {
-    const grid = $("#productGrid"), list = filteredProducts();
+    const grid = $("#productGrid"), list = products;
     if (!grid) return;
-    if ($("#resultsCount")) $("#resultsCount").textContent = `${list.length} product${list.length === 1 ? "" : "s"}`;
-    if ($("#noResults")) $("#noResults").hidden = !!list.length;
+    const filtering = state.filter !== "All" || !!state.query || state.onlyWishlist;
+    if ($("#resultsCount")) $("#resultsCount").textContent = `${state.total} product${state.total === 1 ? "" : "s"}`;
+
+    const empty = $("#noResults");
+    if (empty) {
+      empty.hidden = !!list.length;
+      const h = empty.querySelector("h3"), t = empty.querySelector("p"), b = $("#resetShop");
+      if (!list.length) {
+        h.textContent = filtering ? "No products found" : "No products yet";
+        t.textContent = filtering ? "Try another search or clear your filters." : "Sellers are just getting started. Check back soon, or open your own store from the Sell page.";
+        if (b) b.hidden = !filtering;
+      }
+    }
     grid.innerHTML = "";
 
     list.forEach(p => {
       const card = document.createElement("article");
       card.className = "product-card";
       const wished = state.wishlist.includes(p.id);
-      const actionButton = p.isPartner
-        ? `<a href="${p.affiliateUrl}" target="_blank" rel="noopener" class="btn-affiliate">Buy Partner ↗</a>`
-        : `<button class="add-btn" data-add="${p.id}" type="button" aria-label="Add ${p.name} to cart">+</button>`;
+      const actionButton = p.available
+        ? `<button class="add-btn" data-add="${esc(p.id)}" type="button" aria-label="Add ${esc(p.name)} to cart">+</button>`
+        : "";
+      const meta = [p.seller ? `By ${esc(p.seller)}` : "", p.location ? `📍 ${esc(p.location)}` : ""].filter(Boolean).join(" · ");
 
       card.innerHTML = `<div class="product-media">
-        <span class="badge ${p.isPartner ? "partner" : (p.badge?.includes("off") ? "sale" : "")}">${p.isPartner ? "Partner Deal" : p.badge}</span>
-        <button class="heart ${wished ? "active" : ""}" data-wish="${p.id}" aria-label="${wished ? "Remove" : "Add"} ${p.name}">${wished ? "♥" : "♡"}</button>
-        <a href="product.html" aria-label="View ${p.name}"><img src="${p.image}" alt="${p.name}" loading="lazy"></a>
-        <button class="quick-view" data-quick="${p.id}" type="button">Quick view</button>
+        ${p.badge ? `<span class="badge sale">${esc(p.badge)}</span>` : ""}
+        <button class="heart ${wished ? "active" : ""}" data-wish="${esc(p.id)}" aria-label="${wished ? "Remove" : "Add"} ${esc(p.name)}">${wished ? "♥" : "♡"}</button>
+        <a href="#" data-quick="${esc(p.id)}" aria-label="View ${esc(p.name)}"><img src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy"></a>
+        <button class="quick-view" data-quick="${esc(p.id)}" type="button">Quick view</button>
       </div>
       <div class="product-info">
-        <div class="product-meta"><span class="product-category">${p.category}</span><span class="stock">${p.stock}</span></div>
-        <h3><a href="product.html">${p.name}</a></h3>
-        <div class="rating">★★★★★ <span>${p.rating} (${p.reviews})</span></div>
-        <div class="price-row"><div class="price">${money(p.price)} ${p.oldPrice ? `<span class="old-price">${money(p.oldPrice)}</span>` : ''}</div>${actionButton}</div>
+        <div class="product-meta"><span class="product-category">${esc(p.category)}</span><span class="stock">${esc(p.stock)}</span></div>
+        <h3><a href="#" data-quick="${esc(p.id)}">${esc(p.name)}</a></h3>
+        ${meta ? `<p class="seller-line">${meta}</p>` : ""}
+        <div class="price-row"><div class="price">${money(p.price)} ${p.oldPrice ? `<span class="old-price">${money(p.oldPrice)}</span>` : ""}</div>${actionButton}</div>
       </div>`;
       grid.appendChild(card);
     });
+
+    let more = $("#loadMore");
+    if (!more) {
+      const wrap = document.createElement("div");
+      wrap.className = "load-more-wrap";
+      wrap.innerHTML = '<button type="button" class="btn btn-ghost" id="loadMore" hidden>Load more products</button>';
+      grid.after(wrap);
+      more = $("#loadMore");
+    }
+    more.disabled = false;
+    more.hidden = !!preview || state.onlyWishlist || products.length >= state.total;
   }
 
   function updateCounts() {
@@ -557,7 +643,7 @@ function initStorefront() {
     state.cart.forEach(item => {
       const line = document.createElement("div");
       line.className = "cart-line";
-      line.innerHTML = `<img src="${item.image}" alt="${item.name}"><div><h3>${item.name}</h3><p>${money(item.price)}</p><div class="qty"><button data-qty="${item.id}" data-delta="-1" aria-label="Decrease">−</button><strong>${item.qty}</strong><button data-qty="${item.id}" data-delta="1" aria-label="Increase">+</button><button class="remove" data-remove="${item.id}" type="button">Remove</button></div></div><span class="line-total">${money(item.price * item.qty)}</span>`;
+      line.innerHTML = `<img src="${esc(item.image)}" alt="${esc(item.name)}"><div><h3>${esc(item.name)}</h3><p>${money(item.price)}</p><div class="qty"><button data-qty="${esc(item.id)}" data-delta="-1" aria-label="Decrease">−</button><strong>${item.qty}</strong><button data-qty="${esc(item.id)}" data-delta="1" aria-label="Increase">+</button><button class="remove" data-remove="${esc(item.id)}" type="button">Remove</button></div></div><span class="line-total">${money(item.price * item.qty)}</span>`;
       wrap.appendChild(line);
     });
   }
@@ -579,7 +665,7 @@ function initStorefront() {
     if (i > -1) { state.wishlist.splice(i, 1); toast("Removed from wishlist"); }
     else { state.wishlist.push(id); toast(`${p.name} saved to wishlist`); }
     save("tm-market-wishlist", state.wishlist);
-    renderProducts();
+    if (state.onlyWishlist) loadProducts(true); else renderProducts();
     updateCounts();
   }
 
@@ -587,26 +673,23 @@ function initStorefront() {
   function closeCart() { const d = $("#cartDrawer"); if (!d) return; d.classList.remove("open"); d.setAttribute("aria-hidden", "true"); $("#drawerOverlay").hidden = true; document.body.style.overflow = ""; }
 
   function openQuick(id) {
-    const p = product(id), modal = $("#productModal");
-    if (!modal || !p) return;
-    $("#modalContent").innerHTML = `<div class="modal-content"><img class="quick-image" src="${p.image}" alt="${p.name}"><div class="modal-info"><span class="eyebrow">${p.category}</span><h2>${p.name}</h2><div class="rating">★★★★★ <span>${p.rating} · ${p.reviews} reviews</span></div><p>Thoughtfully selected for everyday use, with a clean design and the quality you expect from TM Market.</p><div class="modal-price">${money(p.price)} ${p.oldPrice ? `<span class="old-price">${money(p.oldPrice)}</span>` : ''}</div><p style="color:var(--green);font-size:11px;font-weight:800">✓ ${p.stock}</p><button class="btn btn-primary" data-modal-add="${p.id}" style="width:100%;margin-top:15px">Add to cart →</button></div></div>`;
-    modal.showModal();
+    showProductDetails(id, { onAdd: p => { if (!product(p.id)) products.push(p); requireAuth(() => addToCart(p.id)); } });
   }
 
   function applyFilters() {
-    renderProducts();
     $$(".chip").forEach(c => c.classList.toggle("active", c.dataset.filter === state.filter));
+    loadProducts(true);
   }
   function resetFilters() {
-    state.filter = "All"; state.query = ""; state.sort = "featured"; state.onlyWishlist = false;
+    state.filter = "All"; state.query = ""; state.sort = "newest"; state.onlyWishlist = false;
     if ($("#searchInput")) $("#searchInput").value = "";
-    if ($("#sortSelect")) $("#sortSelect").value = "featured";
+    if ($("#sortSelect")) $("#sortSelect").value = "newest";
     if ($("#clearSearch")) $("#clearSearch").hidden = true;
     applyFilters();
   }
   function showWishlist() {
     state.onlyWishlist = !state.onlyWishlist;
-    applyFilters();
+    loadProducts(true);
     $("#shop")?.scrollIntoView({ behavior: "smooth" });
     toast(state.onlyWishlist ? (state.wishlist.length ? "Showing your wishlist" : "Your wishlist is empty. Tap ♡ on a product to save it.") : "Showing all products");
   }
@@ -616,7 +699,7 @@ function initStorefront() {
     const add = e.target.closest("[data-add]"), wish = e.target.closest("[data-wish]"), quick = e.target.closest("[data-quick]");
     if (add) requireAuth(() => addToCart(add.dataset.add));
     if (wish) requireAuth(() => toggleWish(wish.dataset.wish));
-    if (quick) openQuick(quick.dataset.quick);
+    if (quick) { e.preventDefault(); openQuick(quick.dataset.quick); }
   });
 
   $("#cartItems")?.addEventListener("click", e => {
@@ -641,14 +724,19 @@ function initStorefront() {
   $("#searchInput")?.addEventListener("input", e => {
     state.query = e.target.value.trim().toLowerCase();
     if ($("#clearSearch")) $("#clearSearch").hidden = !state.query;
-    renderProducts();
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => loadProducts(true), 300);
   });
   $("#clearSearch")?.addEventListener("click", resetFilters);
   $$(".chip").forEach(c => c.addEventListener("click", () => { state.filter = c.dataset.filter; applyFilters(); }));
   $$(".category-card[data-category]").forEach(c => c.addEventListener("click", () => { state.filter = c.dataset.category; applyFilters(); $("#shop")?.scrollIntoView({ behavior: "smooth" }); }));
-  $("#sortSelect")?.addEventListener("change", e => { state.sort = e.target.value; renderProducts(); });
+  $("#sortSelect")?.addEventListener("change", e => { state.sort = e.target.value; loadProducts(true); });
   $("#clearFilters")?.addEventListener("click", resetFilters);
   $("#resetShop")?.addEventListener("click", resetFilters);
+  document.addEventListener("click", e => {
+    if (e.target.closest("#retryProducts")) loadProducts(true);
+    if (e.target.closest("#loadMore")) loadProducts(false);
+  });
   $("#cartBtn")?.addEventListener("click", () => requireAuth(openCart));
   $("#closeCart")?.addEventListener("click", closeCart);
   $("#drawerOverlay")?.addEventListener("click", closeCart);
@@ -690,7 +778,7 @@ function initStorefront() {
     localStorage.setItem("tm-market-dark", document.body.classList.contains("dark"));
   });
 
-  renderProducts();
+  loadProducts(true);
   renderCart();
   if (params().get('cart') === '1' && Auth.isLoggedIn()) openCart();
 }
@@ -699,53 +787,105 @@ function initStorefront() {
 function initShopPage() {
   const grid = $("#shopGrid");
   if (!grid) return;
-  const cats = [...new Set(products.map(p => p.category))];
-  const catBox = $("#catFilters");
+  const catBox = $("#catFilters"), range = $("#priceRange"), readout = $("#priceReadout");
+  const search = $("#shopSearch"), loc = $("#shopLocation"), more = $("#shopLoadMore");
   const wanted = (params().get('category') || '').toLowerCase();
-  cats.forEach(c => {
-    const l = el('label', {}, el('input', { type: 'checkbox', value: c }), document.createTextNode(' ' + c));
-    if (wanted && c.toLowerCase() === wanted) l.querySelector('input').checked = true;
-    catBox.append(l);
-  });
-  const range = $("#priceRange"), readout = $("#priceReadout");
-  range.max = Math.max(...products.map(p => p.price)); range.value = range.max;
-
+  const PAGE_SIZE = 12, SORT = { newest: 'newest', 'price-low': 'price_asc', 'price-high': 'price_desc' };
+  let page = 1, total = 0, reqId = 0, timer = null, priceCap = 0;
   const cart = () => load("tm-market-cart", []);
 
-  function render() {
-    const on = $$('#catFilters input:checked').map(i => i.value);
-    readout.textContent = `Up to ${money(Number(range.value))}`;
-    let list = products.filter(p => (!on.length || on.includes(p.category)) && p.price <= Number(range.value));
-    const s = $("#shopSort").value;
-    if (s === 'price-low') list.sort((a, b) => a.price - b.price);
-    if (s === 'price-high') list.sort((a, b) => b.price - a.price);
-    grid.replaceChildren();
-    if (!list.length) { grid.append(el('div', { class: 'empty-state' }, el('strong', { text: 'No products match your filters' }), document.createTextNode('Try a different category or a higher price.'))); return; }
-    list.forEach(p => {
-      const card = el('div', { class: 'product-card' },
-        el('span', { class: 'badge' + (p.isPartner ? ' partner' : ''), text: p.isPartner ? 'Partner Deal' : 'Verified Merchant' }),
-        el('img', { src: p.image, alt: p.name, loading: 'lazy' }),
-        el('h4', { text: p.name }),
-        el('p', { class: 'seller-info' }, document.createTextNode('Sold by: '), el('strong', { text: p.seller })),
-        el('p', { class: 'price', text: money(p.price) }));
-      if (p.isPartner) card.append(el('a', { class: 'btn-affiliate', href: p.affiliateUrl, target: '_blank', rel: 'noopener', text: 'Buy on Partner Store ↗' }));
-      else card.append(el('button', { class: 'btn-cart', type: 'button', 'data-id': p.id, text: 'Add to Bag' }));
-      grid.append(card);
-    });
+  const note = (text, isErr) => {
+    const p = el('p', { class: 'grid-status' + (isErr ? ' is-error' : ''), text });
+    if (isErr) { const b = el('button', { type: 'button', class: 'link-btn', text: 'Try again' }); b.addEventListener('click', () => fetchPage(true)); p.append(' ', b); }
+    grid.replaceChildren(p);
+  };
+
+  function card(p) {
+    const open = () => showProductDetails(p.id, { onAdd: x => addToBag(x) });
+    const img = el('img', { src: p.image, alt: p.name, loading: 'lazy' });
+    const title = el('h4', { text: p.name });
+    [img, title].forEach(n => { n.style.cursor = 'pointer'; n.addEventListener('click', open); });
+    const c = el('div', { class: 'product-card' });
+    if (p.badge) c.append(el('span', { class: 'badge', text: p.badge }));
+    c.append(img, title);
+    if (p.seller) c.append(el('p', { class: 'seller-info' }, document.createTextNode('Sold by: '), el('strong', { text: p.seller })));
+    if (p.location) c.append(el('p', { class: 'seller-line', text: '📍 ' + p.location }));
+    c.append(el('p', { class: 'price', text: money(p.price) }));
+    const b = el('button', { class: 'btn-cart', type: 'button', 'data-id': p.id, text: p.available ? 'Add to Bag' : 'Unavailable' });
+    if (!p.available) b.disabled = true;
+    c.append(b);
+    return c;
   }
-  grid.addEventListener('click', e => {
-    const b = e.target.closest('.btn-cart'); if (!b) return;
+
+  async function fetchPage(reset) {
+    const mine = ++reqId;
+    if (reset) { page = 1; note('Loading products…'); more.hidden = true; } else page++;
+    more.disabled = true;
+    try {
+      const q = new URLSearchParams({ limit: PAGE_SIZE, page, sort: SORT[$("#shopSort").value] || 'newest' });
+      const cats = $$('#catFilters input:checked').map(i => i.value);
+      if (cats.length) q.set('category', cats.join(','));
+      if (search.value.trim()) q.set('search', search.value.trim());
+      if (loc.value.trim()) q.set('location', loc.value.trim());
+      if (priceCap && Number(range.value) < Number(range.max)) q.set('maxPrice', range.value);
+      const data = await apiRequest('GET', `/api/products?${q}`);
+      if (mine !== reqId) return;
+      const items = data.products.map(mapProduct);
+      total = data.pagination ? data.pagination.total : items.length;
+      if (reset) { products.splice(0, products.length, ...items); grid.replaceChildren(); } else products.push(...items);
+      if (!products.length) {
+        const filtering = cats.length || search.value.trim() || loc.value.trim() || Number(range.value) < Number(range.max);
+        grid.append(el('div', { class: 'empty-state' }, el('strong', { text: filtering ? 'No products match your filters' : 'No products yet' }),
+          document.createTextNode(filtering ? 'Try a different category, location or price.' : 'Sellers are just getting started. Check back soon.')));
+      } else items.forEach(p => grid.append(card(p)));
+      more.disabled = false;
+      more.hidden = products.length >= total;
+    } catch (err) {
+      if (mine !== reqId) return;
+      if (reset) note(err.message, true); else { page--; more.disabled = false; toast(err.message, 4000); }
+    }
+  }
+
+  function addToBag(p) {
     requireAuth(() => {
-      const p = products.find(x => x.id === b.dataset.id); if (!p) return;
+      if (!p.available) return toast('This product is no longer available.');
       const c = cart(), ex = c.find(i => i.id === p.id);
       if (ex) ex.qty++; else c.push({ id: p.id, name: p.name, price: p.price, image: p.image, qty: 1 });
       save("tm-market-cart", c); updateBagCount(); toast(`${p.name} added to your bag`);
     });
+  }
+
+  const refresh = () => { clearTimeout(timer); timer = setTimeout(() => fetchPage(true), 300); };
+  grid.addEventListener('click', e => {
+    const b = e.target.closest('.btn-cart'); if (!b) return;
+    const p = products.find(x => x.id === b.dataset.id); if (p) addToBag(p);
   });
-  catBox.addEventListener('change', render);
-  range.addEventListener('input', render);
-  $("#shopSort").addEventListener('change', render);
-  render();
+  catBox.addEventListener('change', refresh);
+  $("#shopSort").addEventListener('change', refresh);
+  search.addEventListener('input', refresh);
+  loc.addEventListener('input', refresh);
+  range.addEventListener('input', () => { readout.textContent = `Up to ${money(Number(range.value))}`; refresh(); });
+  more.addEventListener('click', () => fetchPage(false));
+  $("#modalClose")?.addEventListener("click", () => $("#productModal").close());
+
+  (async () => {
+    try {
+      const [{ categories }, top] = await Promise.all([
+        apiRequest('GET', '/api/categories'),
+        apiRequest('GET', '/api/products?sort=price_desc&limit=1')
+      ]);
+      categories.forEach(c => {
+        const i = el('input', { type: 'checkbox', value: c.slug });
+        if (wanted && (c.slug === wanted || c.name.toLowerCase() === wanted)) i.checked = true;
+        catBox.append(el('label', {}, i, document.createTextNode(' ' + c.name)));
+      });
+      priceCap = top.products.length ? Math.ceil(Number(top.products[0].price) / 1000) * 1000 : 0;
+      range.min = 0; range.step = 500;
+      if (priceCap) { range.max = priceCap; range.value = priceCap; readout.textContent = `Up to ${money(priceCap)}`; }
+      else { range.disabled = true; readout.textContent = 'No products yet'; }
+    } catch { readout.textContent = ''; }
+    fetchPage(true);
+  })();
 }
 
 /* ---------- authenticated API calls (backend checks the token and the seller role) ---------- */
@@ -785,6 +925,48 @@ async function uploadImage(file) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.secure_url) throw new Error('Image upload failed. Please try another image.');
   return data.secure_url;
+}
+
+
+/* ---------- product details (used by the homepage and the shop page) ---------- */
+async function showProductDetails(id, { onAdd } = {}) {
+  const modal = $('#productModal'), box = $('#modalContent');
+  if (!modal || !box) return;
+  box.innerHTML = '<p class="grid-status">Loading…</p>';
+  if (!modal.open) modal.showModal();
+  let p;
+  try { p = mapProduct((await apiRequest('GET', `/api/products/${encodeURIComponent(id)}`)).product); }
+  catch (err) { box.innerHTML = `<p class="grid-status is-error">${esc(err.status === 404 ? 'This product is no longer available.' : err.message)}</p>`; return; }
+
+  const imgs = p.images.length ? p.images : [p.image];
+  box.innerHTML = `<div class="modal-content">
+    <div class="detail-gallery"><img class="quick-image" id="detailMain" src="${esc(imgs[0])}" alt="${esc(p.name)}">
+      ${imgs.length > 1 ? `<div class="detail-thumbs">${imgs.map((u, i) => `<img src="${esc(u)}" alt="" data-thumb="${i}" class="${i === 0 ? 'active' : ''}">`).join('')}</div>` : ''}</div>
+    <div class="modal-info"><span class="eyebrow">${esc(p.category)}</span><h2>${esc(p.name)}</h2>
+      <div class="price detail-price">${money(p.price)} ${p.oldPrice ? `<span class="old-price">${money(p.oldPrice)}</span>` : ''}</div>
+      <p class="detail-meta">${esc(p.stock)}${p.location ? ' · 📍 ' + esc(p.location) : ''}</p>
+      ${p.seller ? `<p class="detail-meta">Sold by <strong>${esc(p.seller)}</strong></p>` : ''}
+      <p class="detail-desc">${esc(p.description || 'No description provided.')}</p>
+      <div class="detail-actions">
+        <button class="btn btn-primary" type="button" data-detail-add ${p.available ? '' : 'disabled'}>${p.available ? 'Add to bag' : 'Unavailable'}</button>
+        <button class="btn btn-ghost" type="button" data-detail-contact>Chat with seller on WhatsApp</button>
+      </div></div></div>`;
+
+  box.querySelector('.detail-thumbs')?.addEventListener('click', e => {
+    const t = e.target.closest('[data-thumb]'); if (!t) return;
+    $('#detailMain').src = imgs[Number(t.dataset.thumb)];
+    box.querySelectorAll('[data-thumb]').forEach(x => x.classList.toggle('active', x === t));
+  });
+  box.querySelector('[data-detail-add]').addEventListener('click', () => { if (p.available && onAdd) { onAdd(p); modal.close(); } });
+  box.querySelector('[data-detail-contact]').addEventListener('click', () => requireAuth(async () => {
+    try {
+      const { contact } = await apiRequest('GET', `/api/products/${encodeURIComponent(p.id)}/contact`);
+      const digits = String(contact.whatsapp || '').replace(/\D/g, '');
+      if (!digits) return toast("This seller hasn't added a WhatsApp number yet.", 4000);
+      const msg = `Hello, I'm interested in "${p.name}" (${money(p.price)}) on TM Market.`;
+      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+    } catch (err) { toast(err.message, 4000); }
+  }));
 }
 
 /* ---------- sell page: open a store, then add / edit / delete real listings ---------- */
@@ -1019,6 +1201,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Attach the page-specific pieces that exist on this page
+  purgeLegacyDemoState();
   initVendorForm();
   initShopPage();
   if ($("#productGrid")) initStorefront();

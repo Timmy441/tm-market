@@ -18,6 +18,14 @@
         <aside class="filters-sidebar">
             <h3>Filter Products</h3>
             <div class="filter-group">
+                <h4>Search</h4>
+                <input type="search" id="shopSearch" placeholder="Search products" autocomplete="off" aria-label="Search products">
+            </div>
+            <div class="filter-group">
+                <h4>Location</h4>
+                <input type="text" id="shopLocation" placeholder="e.g. Minna" autocomplete="off" aria-label="Filter by location">
+            </div>
+            <div class="filter-group">
                 <h4>Category</h4>
                 <div id="catFilters"></div>
             </div>
@@ -32,14 +40,17 @@
             <div class="products-header">
                 <h2>All Items</h2>
                 <select id="shopSort" aria-label="Sort products">
-                    <option value="featured">Sort by: Featured</option>
+                    <option value="newest">Sort by: Newest</option>
                     <option value="price-low">Price: Low to High</option>
                     <option value="price-high">Price: High to Low</option>
                 </select>
             </div>
             <div class="product-grid" id="shopGrid"></div>
+            <div class="load-more-wrap"><button type="button" class="btn btn-ghost" id="shopLoadMore" hidden>Load more products</button></div>
         </section>
     </main>
+
+    <dialog class="modal" id="productModal"><button class="modal-close" id="modalClose" aria-label="Close">×</button><div id="modalContent"></div></dialog>
 
 </body>
 </html>

@@ -58,9 +58,9 @@ async function listProducts({ search, categoryId, categorySlug, location, minPri
     conditions.push(`p.category_id = $${values.length}`);
   }
 
-  if (categorySlug) {
+  if (Array.isArray(categorySlug) && categorySlug.length) {
     values.push(categorySlug);
-    conditions.push(`c.slug = $${values.length}`);
+    conditions.push(`c.slug = ANY($${values.length})`);
   }
 
   if (location) {
@@ -269,6 +269,19 @@ async function deactivateProduct(id) {
 }
 
 
+// Seller contact for an active listing (only handed to logged-in users by the route).
+async function findProductContact(id) {
+  const r = await pool.query(
+    `SELECT sp.store_name, sp.whatsapp
+     FROM products p
+     JOIN seller_profiles sp ON sp.user_id = p.seller_id
+     WHERE p.id = $1 AND p.status = 'active' AND p.is_active = TRUE
+     LIMIT 1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+
 async function listCategories() {
   const r = await pool.query(
     `SELECT id, name, slug FROM categories WHERE is_active = TRUE ORDER BY name`
@@ -388,6 +401,7 @@ module.exports = {
   createProduct,
   updateProduct,
   deactivateProduct,
+  findProductContact,
   listCategories,
   listSellerProducts,
   findSellerProduct,

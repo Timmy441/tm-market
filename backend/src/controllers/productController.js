@@ -1,4 +1,5 @@
 const {
+  findProductContact,
   listCategories,
   listProducts,
   findProductById,
@@ -228,8 +229,11 @@ async function getProducts(req, res) {
       }
     }
 
+    // ?category=electronics,fashion  (one or more category slugs)
     const categorySlug =
-      typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
+      typeof req.query.category === 'string'
+        ? req.query.category.split(',').map(c => c.trim().toLowerCase()).filter(Boolean).slice(0, 10)
+        : [];
     const location =
       typeof req.query.location === 'string' ? req.query.location.trim() : '';
     const minPrice = req.query.minPrice !== undefined ? parseMoney(req.query.minPrice) : null;
@@ -312,6 +316,21 @@ async function getProduct(req, res) {
       success: false,
       message: 'Unable to retrieve product'
     });
+  }
+}
+
+async function getProductContact(req, res) {
+  try {
+    const id = parsePositiveInt(req.params.id);
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid product id' });
+
+    const contact = await findProductContact(id);
+    if (!contact) return res.status(404).json({ success: false, message: 'Seller contact not available' });
+
+    return res.status(200).json({ success: true, contact: { storeName: contact.store_name, whatsapp: contact.whatsapp } });
+  } catch (error) {
+    console.error('Product contact error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to retrieve seller contact' });
   }
 }
 
@@ -435,6 +454,7 @@ module.exports = {
   parseMoney,
   slugify,
   getCategories,
+  getProductContact,
   getProducts,
   getProduct,
   createNewProduct,

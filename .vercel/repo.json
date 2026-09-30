@@ -1,0 +1,11 @@
+{
+  "remoteName": "origin",
+  "projects": [
+    {
+      "id": "prj_KUJFSn6ovTdxSOx0U6IbCZ44K9T0",
+      "name": "tm-market",
+      "directory": ".",
+      "orgId": "team_aTBzGWDDZLaOPGUk7tz2dec8"
+    }
+  ]
+}
