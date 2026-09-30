@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#211a52">
+<title>Admin | TM Market</title>
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<style>
+:root{--ink:#211a52;--violet:#7c3aed;--violet2:#a855f7;--gold:#f5b544;--cream:#fbfaff;--text:#625f72;--muted:#9290a0;--line:#ebe9f2;--card:#fff;--green:#16966a;--red:#dc4c5c}
+@media(prefers-color-scheme:dark){:root{--ink:#f6f4ff;--cream:#11101a;--text:#b7b3c5;--muted:#888397;--line:#2b2838;--card:#191722}}
+*{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--text);font:15px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2,h3,p{margin:0}button,input,select{font:inherit}[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.bar{display:flex;align-items:center;gap:12px;min-height:60px;flex-wrap:wrap;padding:8px 0}
+.bar img{height:34px}.bar nav{display:flex;gap:4px;flex:1}
+.tab{border:0;background:none;color:var(--text);font-weight:800;padding:9px 14px;border-radius:10px;cursor:pointer}
+.tab.on{background:var(--ink);color:var(--cream)}
+.btn{border:1px solid var(--line);background:none;color:var(--ink);font-weight:800;border-radius:10px;min-height:38px;padding:0 14px;cursor:pointer}
+.btn:hover{background:var(--line)}.pri{background:var(--violet);border-color:var(--violet);color:#fff}.pri:hover{background:#6d28d9}
+.bad{color:var(--red);border-color:var(--red)}.good{color:var(--green);border-color:var(--green)}
+main{padding:22px 0 60px}h1{color:var(--ink);font-size:24px;margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+.card b{display:block;color:var(--ink);font-size:30px;line-height:1.2}.card span{font-size:13px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.card h3{color:var(--ink);font-size:15px;margin-bottom:8px}svg{width:100%;height:auto;display:block}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+input,select{min-height:40px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);padding:0 12px}
+.tools input{flex:1;min-width:180px}
+.tbl{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:16px}
+table{width:100%;border-collapse:collapse;min-width:640px}th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:middle}
+th{color:var(--muted);font-size:12px}tr:last-child td{border:0}tr.row{cursor:pointer}tr.row:hover{background:var(--line)}
+.pill{display:inline-block;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:800;background:var(--line);color:var(--ink)}
+.pill.ok{color:var(--green)}.pill.no{color:var(--red)}.pill.wait{color:#b7791f}
+.thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;background:var(--line);vertical-align:middle;margin-right:10px}
+.pager{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:13px}
+.empty,.err{padding:26px;text-align:center}.err{color:var(--red)}
+.login{max-width:380px;margin:12vh auto 0;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:30px 26px}
+.login img{height:44px;margin-bottom:14px}.login label{display:block;font-weight:800;color:var(--ink);font-size:13px;margin:12px 0 4px}.login input{width:100%}
+.login .btn{width:100%;margin-top:18px;min-height:44px}.msg{color:var(--red);font-size:13px;margin-top:10px;min-height:18px}
+.modal{position:fixed;inset:0;z-index:20;background:rgba(14,12,24,.62);display:flex;align-items:center;justify-content:center;padding:16px}
+.sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:460px;max-height:90dvh;overflow:auto}
+.sheet h2{color:var(--ink);font-size:20px}.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;margin:14px 0;font-size:14px}.kv dt{color:var(--muted)}.kv dd{margin:0;color:var(--ink);word-break:break-word}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.loader{position:fixed;inset:0;z-index:99;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:color-mix(in srgb,var(--cream) 94%,transparent);backdrop-filter:blur(6px)}
+.loader img{width:170px;animation:pulse 1.6s ease-in-out infinite}.lbar{width:220px;height:4px;border-radius:9px;background:var(--line);overflow:hidden}
+.lbar i{display:block;width:40%;height:100%;background:linear-gradient(90deg,var(--violet),var(--violet2));animation:slide 1.1s ease-in-out infinite}
+.loader p{font-size:12px;font-weight:800;color:var(--muted)}
+@keyframes slide{0%{transform:translateX(-110%)}100%{transform:translateX(280%)}}@keyframes pulse{50%{opacity:.7}}
+@media(max-width:560px){.bar img{height:28px}.tab{padding:8px 10px}h1{font-size:21px}.kv{grid-template-columns:90px 1fr}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="loader" id="loader"><img src="assets/logo.svg" alt="TM Market"><div class="lbar"><i></i></div><p id="ltext">Loading…</p></div>
+
+<div id="loginView" hidden>
+  <div class="login">
+    <img src="assets/logo.svg" alt="TM Market">
+    <h1>Admin sign in</h1>
+    <label for="em">Email</label><input id="em" type="email" autocomplete="username">
+    <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+    <button class="btn pri" id="go">Sign in</button>
+    <p class="msg" id="lmsg" role="alert"></p>
+  </div>
+</div>
+
+<div id="appView" hidden>
+  <header><div class="wrap bar">
+    <img src="assets/logo.svg" alt="TM Market">
+    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button></nav>
+    <span id="who" style="font-size:13px"></span><button class="btn" id="out">Sign out</button>
+  </div></header>
+  <main class="wrap" id="view"></main>
+</div>
+<div class="modal" id="modal" hidden><div class="sheet" id="sheet"></div></div>
+
+<script>
+const API = 'https://tm-market-backend.fly.dev';
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const date = d => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+const naira = n => '₦' + Number(n).toLocaleString('en-NG');
+let token = null; try { token = localStorage.getItem('tm_admin_token'); } catch (e) {}
+let tab = 'dash', page = 1, timer;
+
+/* loader: always hides (success, error, timeout) */
+let lc = 0, lt;
+const Loader = {
+  show(t) { lc++; $('#ltext').textContent = t || 'Loading…'; $('#loader').hidden = false; clearTimeout(lt); lt = setTimeout(() => { lc = 0; $('#loader').hidden = true; }, 20000); },
+  hide() { lc = Math.max(0, lc - 1); if (!lc) { clearTimeout(lt); $('#loader').hidden = true; } }
+};
+async function api(path, opt = {}) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch(API + path, { ...opt, signal: ctl.signal, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { if (token && (r.status === 401 || (r.status === 403 && /inactive/.test(d.message || '')))) signOut(); throw new Error(d.message || 'Request failed'); }
+    return d;
+  } catch (e) { throw new Error(e.name === 'AbortError' ? 'The server took too long. Try again.' : e.message === 'Failed to fetch' ? 'Cannot reach the server. Check your connection.' : e.message); }
+  finally { clearTimeout(t); }
+}
+async function run(text, fn) { Loader.show(text); try { return await fn(); } finally { Loader.hide(); } }
+
+/* auth */
+function signOut() { token = null; try { localStorage.removeItem('tm_admin_token'); } catch (e) {} $('#appView').hidden = true; $('#modal').hidden = true; $('#loginView').hidden = false; }
+async function enter() {
+  const d = await api('/api/admin/me');
+  $('#who').textContent = d.admin.name; $('#loginView').hidden = true; $('#appView').hidden = false; show('dash');
+}
+$('#go').onclick = async () => {
+  const msg = $('#lmsg'); msg.textContent = '';
+  try {
+    await run('Signing you in…', async () => {
+      const d = await api('/api/login', { method: 'POST', body: JSON.stringify({ email: $('#em').value, password: $('#pw').value }) });
+      token = d.token;
+      try { await enter(); } catch (e) { token = null; throw new Error(/Admin access/.test(e.message) ? 'This account is not an admin.' : e.message); }
+      try { localStorage.setItem('tm_admin_token', token); } catch (e) {}
+      $('#pw').value = '';
+    });
+  } catch (e) { msg.textContent = e.message; }
+};
+$('#pw').onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
+$('#out').onclick = signOut;
+
+/* navigation */
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => { page = 1; show(b.dataset.tab); });
+function show(t) {
+  tab = t; $('#view').innerHTML = ''; document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  ({ dash, users, products })[t]();
+}
+const fail = e => { $('#view').innerHTML = `<div class="card err">${esc(e.message)}<br><br><button class="btn" onclick="show(tab)">Try again</button></div>`; };
+
+/* dashboard: real numbers only */
+function bars(rows, title) {
+  const max = Math.max(1, ...rows.map(r => r.count)), w = 300 / rows.length, total = rows.reduce((a, r) => a + r.count, 0);
+  const b = rows.map((r, i) => { const h = Math.round((r.count / max) * 70); return `<rect x="${(i * w + 1).toFixed(1)}" y="${76 - h}" width="${(w - 2).toFixed(1)}" height="${Math.max(h, 1)}" rx="2" fill="${r.count ? 'var(--violet)' : 'var(--line)'}"><title>${esc(r.date)}: ${r.count}</title></rect>`; }).join('');
+  return `<div class="card"><h3>${title}</h3><svg viewBox="0 0 300 80" role="img" aria-label="${title}">${b}</svg><span>${total} in the last ${rows.length} days</span></div>`;
+}
+async function dash() {
+  $('#view').innerHTML = '';
+  try {
+    const [s, t] = await run('Loading dashboard…', () => Promise.all([api('/api/admin/stats'), api('/api/admin/stats/timeseries?days=30')]));
+    const u = s.stats.users, p = s.stats.products, o = s.stats.orders;
+    const recent = s.stats.recentProducts.length ? s.stats.recentProducts.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.seller_name || '-')}</td><td>${naira(r.price)}</td><td><span class="pill">${esc(r.status)}</span></td><td>${date(r.created_at)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No products yet.</td></tr>';
+    $('#view').innerHTML = `<h1>Dashboard</h1><div class="cards">
+      <div class="card"><b>${u.total}</b><span>Users (${u.today} today, ${u.last_7_days} in 7 days)</span></div>
+      <div class="card"><b>${u.sellers}</b><span>Sellers (${u.suspended} suspended users)</span></div>
+      <div class="card"><b>${p.total}</b><span>Products (${p.active} active, ${p.pending} pending)</span></div>
+      <div class="card"><b>${o ? o.total : 'n/a'}</b><span>${o ? 'Orders' : 'Orders not available yet'}</span></div></div>
+      <div class="charts">${bars(t.users, 'New users per day')}${bars(t.products, 'New products per day')}</div>
+      <h1 style="margin-top:22px">Recently added</h1><div class="tbl"><table><tr><th>Product</th><th>Seller</th><th>Price</th><th>Status</th><th>Added</th></tr>${recent}</table></div>`;
+  } catch (e) { fail(e); }
+}
+
+/* shared list UI */
+function pager(d) {
+  const pages = Math.max(1, Math.ceil(d.total / d.limit));
+  return `<div class="pager"><span>${d.total} total</span><span><button class="btn" id="prev" ${page <= 1 ? 'disabled' : ''}>Previous</button> Page ${page} of ${pages} <button class="btn" id="next" ${page >= pages ? 'disabled' : ''}>Next</button></span></div>`;
+}
+function wire(reload) {
+  const go = () => { page = 1; reload(); };
+  $('#q').oninput = () => { clearTimeout(timer); timer = setTimeout(go, 350); };
+  document.querySelectorAll('.tools select').forEach(s => s.onchange = go);
+  if ($('#prev')) $('#prev').onclick = () => { page--; reload(); };
+  if ($('#next')) $('#next').onclick = () => { page++; reload(); };
+}
+const vals = () => ({ q: $('#q') ? $('#q').value : '', a: $('#fa') ? $('#fa').value : '', b: $('#fb') ? $('#fb').value : '' });
+const qs = o => Object.entries(o).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+
+/* users */
+async function users() {
+  const keep = vals();
+  if (!$('#q')) $('#view').innerHTML = `<h1>Users</h1><div class="tools"><input id="q" placeholder="Search name, email, phone or store" aria-label="Search users"><select id="fa" aria-label="Role"><option value="">All roles</option><option>customer</option><option>seller</option><option>admin</option></select><select id="fb" aria-label="Status"><option value="">Any status</option><option value="active">Active</option><option value="suspended">Suspended</option></select></div><div id="list"></div>`;
+  else { $('#q').value = keep.q; }
+  try {
+    const d = await run('Loading users…', () => api('/api/admin/users?' + qs({ search: $('#q').value, role: $('#fa').value, status: $('#fb').value, page })));
+    const rows = d.users.map(u => `<tr class="row" data-id="${esc(u.id)}"><td>${esc(u.first_name + ' ' + u.last_name)}</td><td>${esc(u.email)}</td><td><span class="pill">${esc(u.role)}</span>${u.store_name ? ' ' + esc(u.store_name) : ''}</td><td>${u.product_count}</td><td><span class="pill ${u.is_active ? 'ok' : 'no'}">${u.is_active ? 'Active' : 'Suspended'}</span></td><td>${date(u.created_at)}</td></tr>`).join('');
+    $('#list').innerHTML = `<div class="tbl"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Products</th><th>Status</th><th>Joined</th></tr>${rows || '<tr><td colspan="6" class="empty">No users match.</td></tr>'}</table></div>${pager(d)}`;
+    wire(users);
+    document.querySelectorAll('tr.row').forEach(r => r.onclick = () => userSheet(r.dataset.id));
+  } catch (e) { $('#list').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+}
+async function userSheet(id) {
+  try {
+    const d = await run('Loading user…', () => api('/api/admin/users/' + id));
+    const u = d.user, s = d.seller, p = d.products, isAdmin = u.role === 'admin';
+    $('#sheet').innerHTML = `<h2>${esc(u.first_name + ' ' + u.last_name)}</h2><dl class="kv">
+      <dt>Email</dt><dd>${esc(u.email)}</dd><dt>Phone</dt><dd>${esc(u.phone || 'Not added')}</dd><dt>Role</dt><dd>${esc(u.role)}</dd>
+      <dt>Status</dt><dd>${u.is_active ? 'Active' : 'Suspended'}</dd><dt>Joined</dt><dd>${date(u.created_at)}</dd>
+      ${s ? `<dt>Store</dt><dd>${esc(s.store_name)}, ${esc(s.location)}</dd><dt>Products</dt><dd>${p.active} active, ${p.pending} pending, ${p.sold} sold, ${p.removed} removed</dd>` : ''}</dl>
+      <div class="acts">${isAdmin ? '<p>Admin accounts are managed in the database.</p>' : u.is_active ? `<button class="btn bad" id="act">Suspend user</button>` : `<button class="btn good" id="act">Reactivate user</button>`}<button class="btn" id="cls">Close</button></div><p class="msg" id="smsg"></p>`;
+    $('#modal').hidden = false; $('#cls').onclick = () => $('#modal').hidden = true;
+    if ($('#act')) $('#act').onclick = async () => {
+      if (u.is_active && !confirm('Suspend this user? They are signed out immediately and their listings are hidden.')) return;
+      try { await run('Saving…', () => api(`/api/admin/users/${u.id}/${u.is_active ? 'suspend' : 'reactivate'}`, { method: 'POST' })); $('#modal').hidden = true; users(); }
+      catch (e) { $('#smsg').textContent = e.message; }
+    };
+  } catch (e) { alert(e.message); }
+}
+
+/* products */
+const NEXT = { pending: [['Approve', 'active', 'good'], ['Reject', 'removed', 'bad']], active: [['Remove', 'removed', 'bad']], sold: [['Remove', 'removed', 'bad']], removed: [['Restore', 'active', 'good']] };
+async function products() {
+  const keep = vals();
+  if (!$('#q')) $('#view').innerHTML = `<h1>Products</h1><div class="tools"><input id="q" placeholder="Search product, location or store" aria-label="Search products"><select id="fa" aria-label="Status"><option value="">All statuses</option><option>active</option><option>pending</option><option>sold</option><option>removed</option></select></div><div id="list"></div>`;
+  else { $('#q').value = keep.q; }
+  try {
+    const d = await run('Loading products…', () => api('/api/admin/products?' + qs({ search: $('#q').value, status: $('#fa').value, page })));
+    const rows = d.products.map(p => `<tr><td>${p.image_url ? `<img class="thumb" src="${esc(p.image_url)}" alt="">` : '<span class="thumb" style="display:inline-block"></span>'}${esc(p.name)}</td><td>${esc(p.seller_name || '-')}</td><td>${naira(p.price)}</td><td><span class="pill ${p.status === 'active' ? 'ok' : p.status === 'pending' ? 'wait' : p.status === 'removed' ? 'no' : ''}">${esc(p.status)}</span></td><td>${date(p.created_at)}</td><td><div class="acts">${(NEXT[p.status] || []).map(a => `<button class="btn ${a[2]}" data-id="${esc(p.id)}" data-st="${a[1]}">${a[0]}</button>`).join('')}</div></td></tr>`).join('');
+    $('#list').innerHTML = `<div class="tbl"><table><tr><th>Product</th><th>Seller</th><th>Price</th><th>Status</th><th>Added</th><th>Action</th></tr>${rows || '<tr><td colspan="6" class="empty">No products yet.</td></tr>'}</table></div>${pager(d)}`;
+    wire(products);
+    document.querySelectorAll('.acts .btn[data-st]').forEach(b => b.onclick = async () => {
+      if (b.dataset.st === 'removed' && !confirm('Remove this listing from the marketplace?')) return;
+      try { await run('Saving…', () => api(`/api/admin/products/${b.dataset.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: b.dataset.st }) })); products(); }
+      catch (e) { alert(e.message); }
+    });
+  } catch (e) { $('#list').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+}
+
+$('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').hidden = true; };
+(async () => {
+  try { if (token) await enter(); else $('#loginView').hidden = false; }
+  catch (e) { signOut(); }
+  finally { $('#loader').hidden = true; lc = 0; }
+})();
+</script>
+</body>
+</html>
