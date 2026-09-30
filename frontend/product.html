@@ -1,77 +1,43 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>All Products | TM Market</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#211a52">
+<meta name="description" content="Browse all TM Market products.">
+<title>Shop All Products | TM Market</title>
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="script.js"></script>
 </head>
-<body>
+<body data-page="app" data-protected>
 
-    <!-- Header -->
-    <header class="navbar">
-        <div class="logo">
-            <a href="homepage.html"><strong>TM MARKET</strong></a>
-        </div>
-        <nav>
-            <a href="homepage.html">Home</a>
-            <a href="product.html" class="active">Shop All</a>
-            <a href="vendor-register.html" class="btn-vendor">Sell on TM Market</a>
-        </nav>
-        <div class="nav-actions">
-            <a href="#cart" class="cart-btn">🛒 Bag (0)</a>
-        </div>
-    </header>
+    <div id="siteHeader"></div>
 
-    <!-- Products Page Layout -->
     <main class="products-container">
-        <!-- Sidebar Filters -->
         <aside class="filters-sidebar">
             <h3>Filter Products</h3>
             <div class="filter-group">
                 <h4>Category</h4>
-                <label><input type="checkbox"> Electronics</label><br>
-                <label><input type="checkbox"> Fashion</label><br>
-                <label><input type="checkbox"> Home Essentials</label>
+                <div id="catFilters"></div>
             </div>
             <div class="filter-group">
                 <h4>Price</h4>
-                <input type="range" min="1000" max="500000">
+                <input type="range" id="priceRange" min="1000" max="500000" aria-label="Maximum price">
+                <span class="price-readout" id="priceReadout"></span>
             </div>
         </aside>
 
-        <!-- Product Grid -->
         <section class="products-list">
             <div class="products-header">
                 <h2>All Items</h2>
-                <select>
-                    <option>Sort by: Featured</option>
-                    <option>Price: Low to High</option>
-                    <option>Price: High to Low</option>
+                <select id="shopSort" aria-label="Sort products">
+                    <option value="featured">Sort by: Featured</option>
+                    <option value="price-low">Price: Low to High</option>
+                    <option value="price-high">Price: High to Low</option>
                 </select>
             </div>
-
-            <div class="product-grid">
-                <!-- Product Card Example 1 (Merchant Listing) -->
-                <div class="product-card">
-                    <span class="badge">Verified Merchant</span>
-                    <img src="assets/product-1.svg" alt="Product Image">
-                    <h4>Aurora X1 Smartphone</h4>
-                    <p class="seller-info">Sold by: <strong>Lagos Gadgets Hub</strong></p>
-                    <p class="price">₦120,000</p>
-                    <button class="btn-cart">Add to Bag</button>
-                </div>
-
-                <!-- Product Card Example 2 (Affiliate/Partner Link) -->
-                <div class="product-card">
-                    <span class="badge partner">Partner Deal</span>
-                    <img src="assets/product-1.svg" alt="Product Image">
-                    <h4>Wireless Noise-Canceling Earbuds</h4>
-                    <p class="seller-info">Sold by: <strong>Jumia Partner</strong></p>
-                    <p class="price">₦18,500</p>
-                    <a href="YOUR_AFFILIATE_LINK" target="_blank" class="btn-affiliate">Buy on Partner Store ↗</a>
-                </div>
-            </div>
+            <div class="product-grid" id="shopGrid"></div>
         </section>
     </main>
 
