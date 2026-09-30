@@ -14,7 +14,7 @@ async function findUserByEmail(email) {
       created_at,
       updated_at
      FROM users
-     WHERE email = $1
+     WHERE lower(email) = lower($1)
      LIMIT 1`,
     [email]
   );
@@ -43,12 +43,22 @@ async function findUserById(id) {
   return result.rows[0] || null;
 }
 
+async function findUserByPhone(phoneNormalized) {
+  const result = await pool.query(
+    `SELECT id FROM users WHERE phone_normalized = $1 LIMIT 1`,
+    [phoneNormalized]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function createUser({
   firstName,
   lastName,
   email,
   passwordHash,
-  phone
+  phone,
+  phoneNormalized
 }) {
   const result = await pool.query(
     `INSERT INTO users (
@@ -56,9 +66,10 @@ async function createUser({
       last_name,
       email,
       password_hash,
-      phone
+      phone,
+      phone_normalized
     )
-    VALUES ($1, $2, $3, $4, $5)
+    VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING
       id,
       first_name,
@@ -74,7 +85,8 @@ async function createUser({
       lastName,
       email,
       passwordHash,
-      phone || null
+      phone || null,
+      phoneNormalized || null
     ]
   );
 
@@ -84,5 +96,6 @@ async function createUser({
 module.exports = {
   findUserByEmail,
   findUserById,
+  findUserByPhone,
   createUser
 };

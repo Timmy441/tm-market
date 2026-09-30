@@ -1,106 +1,70 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+
+const authRoutes = require('./src/routes/authRoutes');
+const productRoutes = require('./src/routes/productRoutes');
+const sellerRoutes = require('./src/routes/sellerRoutes');
+const { getCategories } = require('./src/controllers/productController');
+
+if (!process.env.JWT_SECRET) {
+  console.error('JWT_SECRET is not set. Refusing to start.');
+  process.exit(1);
+}
 
 const app = express();
 
-// Middleware
-app.use(express.json());
+app.set('trust proxy', 1); // running behind Fly's proxy
+app.use(helmet());
+app.use(morgan('tiny'));
+app.use(express.json({ limit: '100kb' }));
 
 const allowedOrigins = [
   'http://localhost:5000',
   'http://localhost:3000',
   'http://127.0.0.1:5500',
-  'https://tm-market-pi.vercel.app'
+  'https://tm-market-pi.vercel.app',
+  ...(process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean)
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      return callback(null, true);
-    } else {
-      return callback(new Error('CORS policy blocked this origin.'));
-    }
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS policy blocked this origin.'));
   },
   credentials: true
 }));
 
-// MongoDB & Secrets
-const MONGO_URI = process.env.MONGO_URI;
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
-
-// Connect to MongoDB Atlas
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB Atlas'))
-  .catch(err => console.error('MongoDB connection error:', err));
-
-// User Model
-const userSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true }
-}, { timestamps: true });
-
-const User = mongoose.model('User', userSchema);
-
-// Registration Endpoint
-app.post('/api/register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'All fields are required.' });
-    }
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists.' });
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    const newUser = new User({ name, email, password: hashedPassword });
-    await newUser.save();
-
-    res.status(201).json({ message: 'User registered successfully!' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error during registration.', error: error.message });
-  }
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many attempts. Please try again in a few minutes.' }
 });
 
-// Login Endpoint
-app.post('/api/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
+app.get('/api/health', (req, res) => res.json({ success: true }));
 
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required.' });
-    }
+// Same public paths as before: POST /api/register, POST /api/login (plus GET /api/me)
+app.use('/api/register', authLimiter);
+app.use('/api/login', authLimiter);
+app.use('/api', authRoutes);
+app.get('/api/categories', getCategories);
+app.use('/api/products', productRoutes);
+app.use('/api/sellers', sellerRoutes);
 
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials.' });
-    }
+app.use((req, res) => res.status(404).json({ success: false, message: 'Not found' }));
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials.' });
-    }
-
-    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '7d' });
-
-    res.json({
-      message: 'Login successful!',
-      token,
-      user: { id: user._id, name: user.name, email: user.email }
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error during login.', error: error.message });
+app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+  if (err && err.message === 'CORS policy blocked this origin.') {
+    return res.status(403).json({ success: false, message: err.message });
   }
+  console.error('Unhandled error:', err);
+  return res.status(500).json({ success: false, message: 'Something went wrong' });
 });
 
 const PORT = process.env.PORT || 8080;

@@ -134,3 +134,21 @@ button{padding:0}
 @media(max-width:680px){.header-right .bag-link{padding:0 10px}}
 @media(max-width:680px){.header-actions{gap:6px}.btn-sm{min-height:38px;padding:0 11px;font-size:12px}#authContainer{gap:6px}.cart-btn{padding:0 11px}}
 @media(max-width:460px){#themeBtn{display:none}.brand img{width:110px}}
+
+/* Sell page: seller dashboard */
+.vendor-page.wide{max-width:920px}
+.sell-status{margin:12px 0;color:var(--muted);text-align:center}.sell-status.is-error{color:#b3261e}
+.sell-head{margin-bottom:16px}.sell-head h2{color:var(--ink);font-size:24px}.sell-head p{color:var(--muted)}
+.vendor-form textarea{width:100%;margin-top:5px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--cream);color:var(--ink);font:inherit}
+.vendor-form input[type=file]{height:auto;padding:10px 12px}
+.btn-ghost-sm{width:100%;margin-top:10px;min-height:42px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--ink);font-weight:800;cursor:pointer}
+.sell-previews{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.sell-previews img{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.sell-list-title{margin:28px 0 12px;color:var(--ink);font-size:20px}
+.sell-listings{display:grid;gap:12px}
+.sell-item{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
+.sell-item>img,.sell-noimg{width:72px;height:72px;flex:none;object-fit:cover;border-radius:12px;background:var(--cream)}
+.sell-item-body{display:flex;flex:1;min-width:180px;flex-direction:column;gap:2px}.sell-item-body strong{color:var(--ink)}.sell-item-body span{font-size:13px}
+.sell-badge{align-self:flex-start;padding:2px 10px;border-radius:99px;background:var(--cream);font-size:11px;font-weight:800;text-transform:uppercase}
+.sell-badge.active{background:#e3f6ee;color:var(--green)}.sell-badge.pending{background:#fff4dc;color:#a06a00}.sell-badge.sold{background:#eee;color:#555}
+.sell-actions{display:flex;flex-wrap:wrap;gap:8px}.sell-actions button{min-height:38px;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-weight:800;cursor:pointer}
+.sell-actions .danger{color:var(--red);border-color:#f3c9ce}

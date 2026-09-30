@@ -4,8 +4,15 @@ const jwt = require('jsonwebtoken');
 const {
     findUserByEmail,
     findUserById,
+    findUserByPhone,
     createUser
 } = require('../models/userModel');
+
+const { normalizeNigerianPhone } = require('../utils/phone');
+
+const EMAIL_EXISTS = 'An account with this email already exists.';
+const PHONE_EXISTS = 'This phone number is already registered.';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizeEmail(email) {
   return email.trim().toLowerCase();
@@ -27,6 +34,7 @@ function createToken(user) {
 function publicUser(user) {
   return {
     id: user.id,
+    name: `${user.first_name} ${user.last_name}`.trim(),
     firstName: user.first_name,
     lastName: user.last_name,
     email: user.email,
@@ -40,51 +48,57 @@ function publicUser(user) {
 
 async function register(req, res) {
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      password,
-      phone
-    } = req.body;
+    const { email, password, phone } = req.body || {};
+    let { firstName, lastName, name } = req.body || {};
 
-    if (!firstName || !lastName || !email || !password) {
+    // The current frontend sends a single "name"; split it into first/last.
+    if ((!firstName || !lastName) && typeof name === 'string') {
+      const parts = name.trim().split(/\s+/).filter(Boolean);
+      firstName = parts[0];
+      lastName = parts.slice(1).join(' ');
+    }
+
+    if (
+      typeof firstName !== 'string' || firstName.trim().length < 2 ||
+      typeof lastName !== 'string' || lastName.trim().length < 2
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'First name, last name, email, and password are required'
+        message: 'Please enter your first and last name.'
       });
     }
 
-    if (typeof email !== 'string' || !email.includes('@')) {
+    if (typeof email !== 'string' || !EMAIL_PATTERN.test(email.trim()) || email.length > 255) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a valid email address'
+        message: 'Please provide a valid email address.'
       });
     }
 
-    if (typeof password !== 'string' || password.length < 8) {
+    if (typeof password !== 'string' || password.length < 8 || password.length > 72) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters long'
+        message: 'Password must be between 8 and 72 characters long.'
       });
     }
 
-    if (firstName.trim().length < 2 || lastName.trim().length < 2) {
+    const phoneNormalized = normalizeNigerianPhone(phone);
+
+    if (!phoneNormalized) {
       return res.status(400).json({
         success: false,
-        message: 'First name and last name must contain at least 2 characters'
+        message: 'Please enter a valid Nigerian phone number, e.g. 08012345678.'
       });
     }
 
     const normalizedEmail = normalizeEmail(email);
 
-    const existingUser = await findUserByEmail(normalizedEmail);
+    if (await findUserByEmail(normalizedEmail)) {
+      return res.status(409).json({ success: false, message: EMAIL_EXISTS });
+    }
 
-    if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: 'An account with this email already exists'
-      });
+    if (await findUserByPhone(phoneNormalized)) {
+      return res.status(409).json({ success: false, message: PHONE_EXISTS });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
@@ -94,7 +108,8 @@ async function register(req, res) {
       lastName: lastName.trim(),
       email: normalizedEmail,
       passwordHash,
-      phone: phone ? phone.trim() : null
+      phone: phone.trim(),
+      phoneNormalized
     });
 
     const token = createToken(user);
@@ -106,6 +121,15 @@ async function register(req, res) {
       user: publicUser(user)
     });
   } catch (error) {
+    // Two people registering at the same instant: the database constraint is the final guard.
+    if (error.code === '23505') {
+      const isPhone = String(error.constraint || '').includes('phone');
+      return res.status(409).json({
+        success: false,
+        message: isPhone ? PHONE_EXISTS : EMAIL_EXISTS
+      });
+    }
+
     console.error('Registration error:', error);
 
     return res.status(500).json({
@@ -204,5 +228,7 @@ async function getMe(req, res) {
 module.exports = {
     register,
     login,
-    getMe
+    getMe,
+    createToken,
+    publicUser
 };

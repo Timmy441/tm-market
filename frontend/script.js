@@ -192,7 +192,8 @@ function buildAuthModal() {
       <p id="registerError" class="form-error" role="alert" hidden></p>
       <div class="form-group"><label for="reg-name">Full Name</label><input type="text" id="reg-name" placeholder="John Doe" autocomplete="name" required></div>
       <div class="form-group"><label for="reg-email">Email</label><input type="email" id="reg-email" placeholder="email@example.com" autocomplete="email" required></div>
-      <div class="form-group"><label for="reg-password">Password</label><input type="password" id="reg-password" placeholder="••••••••" autocomplete="new-password" required></div>
+      <div class="form-group"><label for="reg-phone">Phone number</label><input type="tel" id="reg-phone" placeholder="08012345678" autocomplete="tel" inputmode="tel" required></div>
+      <div class="form-group"><label for="reg-password">Password</label><input type="password" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required></div>
       <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
     </form>
   </div>`;
@@ -210,7 +211,7 @@ function buildAuthModal() {
   });
   $('#register-form').addEventListener('submit', e => {
     e.preventDefault();
-    handleRegister($('#reg-name').value.trim(), $('#reg-email').value.trim(), $('#reg-password').value);
+    handleRegister($('#reg-name').value.trim(), $('#reg-email').value.trim(), $('#reg-phone').value.trim(), $('#reg-password').value);
   });
 }
 
@@ -294,12 +295,12 @@ function afterLogin() {
   return false;
 }
 
-async function handleRegister(name, email, password) {
+async function handleRegister(name, email, phone, password) {
   setFormError('register', '');
   setFormBusy('#register-form', true, 'Creating account…');
   Loader.show('Creating your account…');
   try {
-    const data = await apiPost('/api/register', { name, email, password });
+    const data = await apiPost('/api/register', { name, email, phone, password });
     Loader.hide();
     setFormBusy('#register-form', false);
     $('#register-form').reset();
@@ -747,20 +748,208 @@ function initShopPage() {
   render();
 }
 
-/* ---------- sell page: same WhatsApp onboarding as before ---------- */
+/* ---------- authenticated API calls (backend checks the token and the seller role) ---------- */
+async function apiRequest(method, path, body) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 20000);
+  let res;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(Auth.token() ? { Authorization: `Bearer ${Auth.token()}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: ctl.signal
+    });
+  } catch { throw new Error('Unable to reach TM Market. Check your connection and try again.'); }
+  finally { clearTimeout(timer); }
+  let data = {};
+  try { data = await res.json(); } catch { /* non-JSON */ }
+  if (res.status === 401) { Auth.clear(); guardRoute(); throw new Error('Your session has expired. Please log in again.'); }
+  if (!res.ok) { const e = new Error(res.status < 500 && data.message ? data.message : 'Something went wrong. Please try again.'); e.status = res.status; throw e; }
+  return data;
+}
+
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Images go straight from the browser to Cloudinary using a signature made by our backend.
+async function uploadImage(file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error('Images must be JPG, PNG or WebP.');
+  if (file.size > 5 * 1024 * 1024) throw new Error('Each image must be under 5 MB.');
+  const sig = await apiRequest('POST', '/api/sellers/me/uploads/sign');
+  const fd = new FormData();
+  fd.append('file', file); fd.append('api_key', sig.apiKey); fd.append('timestamp', sig.timestamp);
+  fd.append('folder', sig.folder); fd.append('signature', sig.signature);
+  let res;
+  try { res = await fetch(`https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`, { method: 'POST', body: fd }); }
+  catch { throw new Error('Image upload failed. Check your connection and try again.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.secure_url) throw new Error('Image upload failed. Please try another image.');
+  return data.secure_url;
+}
+
+/* ---------- sell page: open a store, then add / edit / delete real listings ---------- */
 function initVendorForm() {
-  const vendorForm = $(".vendor-form");
-  if (!vendorForm) return;
-  vendorForm.addEventListener("submit", (e) => {
+  const root = $('#sellRoot');
+  if (!root) return;
+  const statusEl = $('#sellStatus');
+  const say = (t, err) => { if (statusEl) { statusEl.textContent = t; statusEl.classList.toggle('is-error', !!err); statusEl.hidden = !t; } };
+
+  Loader.run(async () => {
+    try {
+      const { seller } = await apiRequest('GET', '/api/sellers/me');
+      say('');
+      renderSellerDashboard(root, seller);
+    } catch (err) {
+      if (err.status === 403 || err.status === 404) { say(''); renderOpenStore(root); }
+      else say(err.message, true);
+    }
+  }, { text: 'Loading your seller account…' });
+}
+
+function renderOpenStore(root) {
+  root.querySelector('.sell-panel')?.remove();
+  const box = el('section', { class: 'vendor-form-section sell-panel' });
+  const u = Auth.user();
+  box.innerHTML = `<form class="vendor-form" id="storeForm" novalidate>
+      <h2>Open your store</h2>
+      <p class="form-error" id="storeError" role="alert" hidden></p>
+      <label for="st-name">Store name</label><input id="st-name" type="text" maxlength="150" placeholder="e.g. Jay Fashion Store" required>
+      <label for="st-loc">City / location</label><input id="st-loc" type="text" maxlength="150" placeholder="e.g. Minna, Niger State" required>
+      <label for="st-wa">WhatsApp number (optional)</label><input id="st-wa" type="tel" placeholder="08012345678" value="${esc(u.phone || '')}">
+      <label for="st-desc">About your store (optional)</label><textarea id="st-desc" maxlength="2000" rows="3"></textarea>
+      <button type="submit" class="btn-primary">Open store</button>
+    </form>`;
+  root.appendChild(box);
+  $('#storeForm').addEventListener('submit', async e => {
     e.preventDefault();
-    const name = vendorForm.querySelector('input[placeholder*="John Doe"]')?.value || "";
-    const storeName = vendorForm.querySelector('input[placeholder*="Jay Fashion"]')?.value || "";
-    const phone = vendorForm.querySelector('input[type="tel"]')?.value || "";
-    const category = vendorForm.querySelector('select')?.value || "";
-    const adminWhatsApp = "2347086049886";
-    const message = `Hello TM Market, I would like to register as a seller!\n\n*Name:* ${name}\n*Store:* ${storeName}\n*Phone:* ${phone}\n*Category:* ${category}`;
-    window.open(`https://wa.me/${adminWhatsApp}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+    const err = $('#storeError'); err.hidden = true;
+    try {
+      const data = await Loader.run(() => apiRequest('POST', '/api/sellers', {
+        storeName: $('#st-name').value, location: $('#st-loc').value, whatsapp: $('#st-wa').value, description: $('#st-desc').value
+      }), { text: 'Opening your store…' });
+      Auth.save(data);                     // new token carries the SELLER role
+      toast('Your store is open!');
+      box.remove();
+      renderSellerDashboard(root, data.seller);
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
   });
+}
+
+async function renderSellerDashboard(root, seller) {
+  root.classList.add('wide');
+  root.querySelector('.sell-panel')?.remove();
+  const box = el('section', { class: 'sell-panel' });
+  box.innerHTML = `
+    <div class="sell-head"><h2>${esc(seller.store_name)}</h2><p>${esc(seller.location)}</p></div>
+    <form class="vendor-form" id="listingForm" novalidate>
+      <h2 id="lfTitle">Add a product</h2>
+      <p class="form-error" id="lfError" role="alert" hidden></p>
+      <label for="lf-name">Product name</label><input id="lf-name" type="text" maxlength="255" required>
+      <label for="lf-price">Price (₦)</label><input id="lf-price" type="number" min="1" step="any" inputmode="decimal" required>
+      <label for="lf-cat">Category</label><select id="lf-cat" required><option value="">Select category</option></select>
+      <label for="lf-loc">Location</label><input id="lf-loc" type="text" maxlength="150" value="${esc(seller.location)}" required>
+      <label for="lf-qty">Quantity available</label><input id="lf-qty" type="number" min="0" step="1" value="1" required>
+      <label for="lf-desc">Description</label><textarea id="lf-desc" maxlength="5000" rows="4"></textarea>
+      <label for="lf-img">Photos (up to 5, JPG/PNG/WebP, max 5 MB each)</label>
+      <input id="lf-img" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+      <div class="sell-previews" id="lfPreviews"></div>
+      <button type="submit" class="btn-primary" id="lfSubmit">Publish product</button>
+      <button type="button" class="btn-ghost-sm" id="lfCancel" hidden>Cancel editing</button>
+    </form>
+    <h2 class="sell-list-title">Your listings</h2>
+    <div id="myListings" class="sell-listings"></div>`;
+  root.appendChild(box);
+
+  let editing = null, products = [];
+  const err = $('#lfError');
+  const showErr = t => { err.textContent = t; err.hidden = !t; };
+
+  try {
+    const { categories } = await apiRequest('GET', '/api/categories');
+    $('#lf-cat').innerHTML = '<option value="">Select category</option>' + categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  } catch { showErr('Could not load categories. Refresh the page.'); }
+
+  const resetForm = () => {
+    editing = null; $('#listingForm').reset(); $('#lf-loc').value = seller.location; $('#lf-qty').value = 1;
+    $('#lfTitle').textContent = 'Add a product'; $('#lfSubmit').textContent = 'Publish product'; $('#lfCancel').hidden = true;
+    $('#lfPreviews').innerHTML = ''; showErr('');
+  };
+  $('#lfCancel').addEventListener('click', resetForm);
+
+  $('#lf-img').addEventListener('change', e => {
+    const files = [...e.target.files].slice(0, 5);
+    $('#lfPreviews').innerHTML = '';
+    files.forEach(f => { const i = el('img', { alt: '' }); i.src = URL.createObjectURL(f); $('#lfPreviews').appendChild(i); });
+  });
+
+  async function loadListings() {
+    const host = $('#myListings');
+    try {
+      ({ products } = await apiRequest('GET', '/api/sellers/me/products'));
+    } catch (ex) { host.innerHTML = `<p class="sell-status is-error">${esc(ex.message)}</p>`; return; }
+    if (!products.length) { host.innerHTML = '<p class="sell-status">You have no listings yet. Add your first product above.</p>'; return; }
+    host.innerHTML = products.map(p => `
+      <article class="sell-item" data-id="${p.id}">
+        ${p.image_url ? `<img src="${esc(p.image_url)}" alt="">` : '<div class="sell-noimg"></div>'}
+        <div class="sell-item-body">
+          <strong>${esc(p.name)}</strong>
+          <span>${money(p.price)} · ${p.quantity ?? 0} in stock · ${esc(p.location || '')}</span>
+          <span class="sell-badge ${esc(p.status)}">${esc(p.status)}</span>
+        </div>
+        <div class="sell-actions">
+          <button type="button" data-act="edit">Edit</button>
+          ${p.status === 'sold' ? '<button type="button" data-act="relist">Relist</button>' : '<button type="button" data-act="sold">Mark sold</button>'}
+          <button type="button" data-act="delete" class="danger">Delete</button>
+        </div>
+      </article>`).join('');
+  }
+
+  $('#myListings').addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-act]'); if (!btn) return;
+    const id = btn.closest('.sell-item').dataset.id, p = products.find(x => String(x.id) === id); if (!p) return;
+    try {
+      if (btn.dataset.act === 'edit') {
+        editing = p; $('#lf-name').value = p.name; $('#lf-price').value = p.price; $('#lf-cat').value = p.category_id || '';
+        $('#lf-loc').value = p.location || ''; $('#lf-qty').value = p.quantity ?? 0; $('#lf-desc').value = p.description || '';
+        $('#lfTitle').textContent = 'Edit product'; $('#lfSubmit').textContent = 'Save changes'; $('#lfCancel').hidden = false;
+        $('#lfPreviews').innerHTML = ''; $('#lf-img').value = ''; $('#listingForm').scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
+      if (btn.dataset.act === 'delete') {
+        if (!confirm(`Delete "${p.name}"? Buyers will no longer see it.`)) return;
+        await Loader.run(() => apiRequest('DELETE', `/api/sellers/me/products/${id}`), { text: 'Deleting…' });
+        toast('Listing removed');
+      } else {
+        await Loader.run(() => apiRequest('PUT', `/api/sellers/me/products/${id}`, { status: btn.dataset.act === 'sold' ? 'sold' : 'active' }), { text: 'Updating…' });
+        toast('Listing updated');
+      }
+      if (editing && String(editing.id) === id) resetForm();
+      loadListings();
+    } catch (ex) { toast(ex.message, 4000); }
+  });
+
+  $('#listingForm').addEventListener('submit', async e => {
+    e.preventDefault(); showErr('');
+    const files = [...$('#lf-img').files].slice(0, 5);
+    if (!editing && !files.length) return showErr('Please add at least one photo.');
+    const body = {
+      name: $('#lf-name').value, price: $('#lf-price').value, categoryId: $('#lf-cat').value,
+      location: $('#lf-loc').value, quantity: $('#lf-qty').value, description: $('#lf-desc').value
+    };
+    const btn = $('#lfSubmit'); btn.disabled = true;
+    try {
+      await Loader.run(async () => {
+        if (files.length) body.images = (await Promise.all(files.map(uploadImage))).map(imageUrl => ({ imageUrl }));
+        if (editing) await apiRequest('PUT', `/api/sellers/me/products/${editing.id}`, body);
+        else await apiRequest('POST', '/api/sellers/me/products', body);
+      }, { text: files.length ? 'Uploading photos…' : 'Saving…' });
+      toast(editing ? 'Listing updated' : 'Product published!');
+      resetForm(); loadListings();
+    } catch (ex) { showErr(ex.message); }
+    finally { btn.disabled = false; }
+  });
+
+  loadListings();
 }
 
 function updateBagCount() {

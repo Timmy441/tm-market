@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { getAuthState } = require('../models/sellerModel');
 
 function authenticateToken(req, res, next) {
   try {
@@ -64,7 +65,34 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// The role is re-read from the database on every call, so a stale token
+// (or a suspended / demoted account) cannot be used to reach seller features.
+async function requireSeller(req, res, next) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const state = await getAuthState(req.user.id);
+
+    if (!state || !state.is_active) {
+      return res.status(403).json({ success: false, message: 'This account is inactive' });
+    }
+
+    if (state.role !== 'seller') {
+      return res.status(403).json({ success: false, message: 'A seller profile is required' });
+    }
+
+    req.user.role = state.role;
+    next();
+  } catch (error) {
+    console.error('Seller check error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to verify account' });
+  }
+}
+
 module.exports = {
   authenticateToken,
-  requireAdmin
+  requireAdmin,
+  requireSeller
 };

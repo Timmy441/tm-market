@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     phone VARCHAR(30),
+    phone_normalized VARCHAR(20),
     role VARCHAR(20) NOT NULL DEFAULT 'customer',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -18,6 +19,10 @@ CREATE TABLE IF NOT EXISTS users (
     CONSTRAINT users_role_check
         CHECK (role IN ('customer', 'admin'))
 );
+
+-- Account uniqueness (see migrations/001_account_uniqueness.sql)
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key ON users (lower(email));
+CREATE UNIQUE INDEX IF NOT EXISTS users_phone_normalized_key ON users (phone_normalized) WHERE phone_normalized IS NOT NULL;
 
 -- CATEGORIES
 CREATE TABLE IF NOT EXISTS categories (
@@ -285,6 +290,8 @@ CREATE INDEX IF NOT EXISTS idx_wishlists_user
 
 CREATE INDEX IF NOT EXISTS idx_promotions_active
     ON promotions(is_active);
+
+-- Sellers and listings: run migrations/002_sellers_and_listings.sql after this file.
 
 -- ============================================
 -- COMPLETE

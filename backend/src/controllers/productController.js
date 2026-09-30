@@ -1,4 +1,5 @@
 const {
+  listCategories,
   listProducts,
   findProductById,
   createProduct,
@@ -227,6 +228,21 @@ async function getProducts(req, res) {
       }
     }
 
+    const categorySlug =
+      typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
+    const location =
+      typeof req.query.location === 'string' ? req.query.location.trim() : '';
+    const minPrice = req.query.minPrice !== undefined ? parseMoney(req.query.minPrice) : null;
+    const maxPrice = req.query.maxPrice !== undefined ? parseMoney(req.query.maxPrice) : null;
+
+    if (
+      (req.query.minPrice !== undefined && minPrice === null) ||
+      (req.query.maxPrice !== undefined && maxPrice === null)
+    ) {
+      return res.status(400).json({ success: false, message: 'Invalid price filter' });
+    }
+
+    const sort = typeof req.query.sort === 'string' ? req.query.sort : 'newest';
     const featured = req.query.featured === 'true';
     const page = parsePositiveInt(req.query.page) || 1;
     const limit = Math.min(parsePositiveInt(req.query.limit) || 20, 50);
@@ -235,6 +251,11 @@ async function getProducts(req, res) {
     const { products, total } = await listProducts({
       search,
       categoryId,
+      categorySlug,
+      location,
+      minPrice,
+      maxPrice,
+      sort,
       featured,
       limit,
       offset
@@ -273,7 +294,7 @@ async function getProduct(req, res) {
 
     const product = await findProductById(id);
 
-    if (!product || !product.is_active) {
+    if (!product || !product.is_active || product.status !== 'active') {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
@@ -291,6 +312,15 @@ async function getProduct(req, res) {
       success: false,
       message: 'Unable to retrieve product'
     });
+  }
+}
+
+async function getCategories(req, res) {
+  try {
+    return res.status(200).json({ success: true, categories: await listCategories() });
+  } catch (error) {
+    console.error('List categories error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to retrieve categories' });
   }
 }
 
@@ -401,6 +431,10 @@ async function removeProduct(req, res) {
 }
 
 module.exports = {
+  parsePositiveInt,
+  parseMoney,
+  slugify,
+  getCategories,
   getProducts,
   getProduct,
   createNewProduct,
