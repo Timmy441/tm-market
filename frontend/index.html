@@ -40,7 +40,41 @@
     </div>
   </nav>
 </header>
+<!-- Profile Modal -->
+<div id="profileModal" class="modal-overlay" hidden>
+  <div class="modal-card profile-card">
+    <button id="closeProfileModal" class="close-btn" type="button">&times;</button>
+    <h3>My Profile</h3>
+    
+    <div class="profile-avatar-section">
+      <div class="avatar-wrapper">
+        <img id="profileAvatarPrev" src="assets/default-avatar.svg" alt="Avatar" class="profile-avatar-img">
+        <label for="avatarInput" class="avatar-edit-badge">📷</label>
+        <input type="file" id="avatarInput" accept="image/*" style="display:none">
+      </div>
+    </div>
 
+    <form id="profile-form">
+      <div class="form-group">
+        <label for="profile-name">Full Name</label>
+        <input type="text" id="profile-name" required>
+      </div>
+      <div class="form-group">
+        <label for="profile-email">Email Address</label>
+        <input type="email" id="profile-email" disabled style="opacity:0.7">
+      </div>
+      <div class="form-group">
+        <label for="profile-phone">Phone Number</label>
+        <input type="tel" id="profile-phone" placeholder="+234 800 000 0000">
+      </div>
+      <div class="form-group">
+        <label for="profile-address">Delivery Address</label>
+        <input type="text" id="profile-address" placeholder="123 Main St, Lagos">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%; margin-top:10px">Save Changes</button>
+    </form>
+  </div>
+</div>
 <main>
 <section class="hero" id="home">
   <div class="container hero-grid">

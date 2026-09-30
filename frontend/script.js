@@ -72,10 +72,37 @@ function updateAuthUI() {
 
   if (authContainer) {
     if (token && user.name) {
-      authContainer.innerHTML = `<span>Hi, ${user.name}</span> <button id="logoutBtn" class="btn-sm">Logout</button>`;
+      const avatarSrc = user.avatar || 'assets/default-avatar.svg';
+      authContainer.innerHTML = `
+        <button id="openProfileBtn" class="profile-chip" type="button">
+          <img src="${avatarSrc}" alt="${user.name}" class="nav-avatar">
+          <span>${user.name}</span>
+        </button>
+        <button id="logoutBtn" class="btn-sm">Logout</button>
+      `;
       document.querySelector('#logoutBtn')?.addEventListener('click', handleLogout);
+      document.querySelector('#openProfileBtn')?.addEventListener('click', openProfileModal);
+    } else {
+      authContainer.innerHTML = `<button id="openAuthBtn" class="btn-sm">Login / Register</button>`;
+      document.querySelector('#openAuthBtn')?.addEventListener('click', () => {
+        document.querySelector('#authModal')?.removeAttribute('hidden');
+      });
     }
   }
+}
+
+function openProfileModal() {
+  const user = JSON.parse(localStorage.getItem('tm_user') || '{}');
+  const modal = document.querySelector('#profileModal');
+  if (!modal) return;
+
+  document.querySelector('#profile-name').value = user.name || '';
+  document.querySelector('#profile-email').value = user.email || '';
+  document.querySelector('#profile-phone').value = user.phone || '';
+  document.querySelector('#profile-address').value = user.address || '';
+  if (user.avatar) document.querySelector('#profileAvatarPrev').src = user.avatar;
+
+  modal.removeAttribute('hidden');
 }
 
 function handleLogout() {
@@ -84,7 +111,76 @@ function handleLogout() {
   toast('Logged out successfully');
   setTimeout(() => window.location.reload(), 1000);
 }
+async function handleLogin(email, password) {
+  try {
+    const res = await fetch(`${API_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Login failed');
 
+    // Save session
+    localStorage.setItem('tm_token', data.token);
+    localStorage.setItem('tm_user', JSON.stringify(data.user));
+
+    toast(`Welcome back, ${data.user.name}!`);
+
+    // 1. Auto-close the Auth Modal immediately
+    const authModal = document.querySelector('#authModal');
+    if (authModal) authModal.setAttribute('hidden', 'true');
+
+    // 2. Clear input fields
+    document.querySelector('#login-email').value = '';
+    document.querySelector('#login-password').value = '';
+
+    // 3. Update header UI and trigger pending action if any
+    updateAuthUI();
+    if (window.pendingAuthAction) {
+      window.pendingAuthAction();
+      window.pendingAuthAction = null;
+    }
+
+    return data;
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+// Profile Modal listeners
+const profileModal = document.querySelector('#profileModal');
+document.querySelector('#closeProfileModal')?.addEventListener('click', () => {
+  profileModal?.setAttribute('hidden', 'true');
+});
+
+// Profile picture upload preview
+document.querySelector('#avatarInput')?.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      document.querySelector('#profileAvatarPrev').src = evt.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+});
+
+// Save profile form
+document.querySelector('#profile-form')?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const user = JSON.parse(localStorage.getItem('tm_user') || '{}');
+  
+  user.name = document.querySelector('#profile-name').value;
+  user.phone = document.querySelector('#profile-phone').value;
+  user.address = document.querySelector('#profile-address').value;
+  user.avatar = document.querySelector('#profileAvatarPrev').src;
+
+  localStorage.setItem('tm_user', JSON.stringify(user));
+  updateAuthUI();
+  profileModal?.setAttribute('hidden', 'true');
+  toast('Profile updated successfully!');
+});
 // --- Main Application Engine ---
 document.addEventListener("DOMContentLoaded", () => {
   updateAuthUI();
