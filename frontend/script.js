@@ -153,6 +153,26 @@ const profileModal = document.querySelector('#profileModal');
 document.querySelector('#closeProfileModal')?.addEventListener('click', () => {
   profileModal?.setAttribute('hidden', 'true');
 });
+function showLoader(durationMs = 0) {
+  const loader = document.querySelector('#pageLoader');
+  if (loader) loader.removeAttribute('hidden');
+
+  if (durationMs > 0) {
+    setTimeout(() => {
+      hideLoader();
+    }, durationMs);
+  }
+}
+
+function hideLoader() {
+  const loader = document.querySelector('#pageLoader');
+  if (loader) loader.setAttribute('hidden', 'true');
+}
+
+// Show loader on initial page load for 3 seconds
+window.addEventListener('load', () => {
+  showLoader(3000); // Loader displays for 3 seconds when opening the site
+});
 
 // Profile picture upload preview
 document.querySelector('#avatarInput')?.addEventListener('change', (e) => {
@@ -165,7 +185,46 @@ document.querySelector('#avatarInput')?.addEventListener('change', (e) => {
     reader.readAsDataURL(file);
   }
 });
+function requireAuth(actionCallback) {
+  const token = localStorage.getItem('tm_token');
+  if (token) {
+    // User is logged in, perform action
+    actionCallback();
+  } else {
+    // Save pending action to execute after login
+    window.pendingAuthAction = actionCallback;
+    // Show toast and open auth modal
+    toast('Please log in or sign up to continue.');
+    document.querySelector('#authModal')?.removeAttribute('hidden');
+  }
+}
+// Example for "Shop Now" / Start Shopping button:
+document.querySelector('#startShoppingBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  requireAuth(() => {
+    // Smooth scroll to product grid or navigate to shop section
+    document.querySelector('#products-section')?.scrollIntoView({ behavior: 'smooth' });
+  });
+});
 
+// Example for "Add to Cart" buttons:
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('add-to-cart-btn')) {
+    e.preventDefault();
+    const productId = e.target.dataset.id;
+    requireAuth(() => {
+      addToCart(productId);
+    });
+  }
+});
+
+// Example for "Sell" / "Post Ad" button:
+document.querySelector('#sellBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  requireAuth(() => {
+    openSellModal();
+  });
+});
 // Save profile form
 document.querySelector('#profile-form')?.addEventListener('submit', (e) => {
   e.preventDefault();
@@ -181,6 +240,7 @@ document.querySelector('#profile-form')?.addEventListener('submit', (e) => {
   profileModal?.setAttribute('hidden', 'true');
   toast('Profile updated successfully!');
 });
+
 // --- Main Application Engine ---
 document.addEventListener("DOMContentLoaded", () => {
   updateAuthUI();
@@ -194,6 +254,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelector('#reg-password').value
     );
   });
+
 // Toggle Auth Modal
 const authModal = document.querySelector("#authModal");
 const openAuthBtn = document.querySelector("#openAuthBtn");
