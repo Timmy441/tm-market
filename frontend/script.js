@@ -617,23 +617,10 @@ function initStorefront() {
     updateCounts();
     if (!wrap) return;
     const subtotal = state.cart.reduce((n, i) => n + i.price * i.qty, 0);
-    const discount = state.coupon === "TM20" ? subtotal * 0.20 : 0;
-    const total = subtotal - discount;
+    const total = subtotal;
 
     if ($("#cartSubtotal")) $("#cartSubtotal").textContent = money(total);
     if ($("#checkoutTotal")) $("#checkoutTotal").textContent = money(total);
-
-    const pct = Math.min(100, (subtotal / 50000) * 100);
-    if ($("#shippingBar")) $("#shippingBar").style.width = `${pct}%`;
-    if ($("#shippingAmount")) $("#shippingAmount").textContent = `${money(subtotal)} / ₦50k`;
-
-    if (subtotal >= 50000) {
-      if ($("#shippingMessage")) $("#shippingMessage").textContent = "🎉 You unlocked free delivery!";
-      if ($("#deliveryCost")) $("#deliveryCost").textContent = "FREE";
-    } else {
-      if ($("#shippingMessage")) $("#shippingMessage").textContent = `Add ${money(50000 - subtotal)} for free delivery`;
-      if ($("#deliveryCost")) $("#deliveryCost").textContent = "Calculated at checkout";
-    }
 
     wrap.innerHTML = "";
     if (!state.cart.length) {
@@ -747,13 +734,6 @@ function initStorefront() {
   $("#modalContent")?.addEventListener("click", e => {
     const b = e.target.closest("[data-modal-add]");
     if (b) { requireAuth(() => addToCart(b.dataset.modalAdd)); $("#productModal").close(); }
-  });
-
-  $("#applyCoupon")?.addEventListener("click", () => {
-    const code = ($("#couponInput")?.value || "").trim().toUpperCase();
-    if (code === "TM20") { state.coupon = "TM20"; toast("Promo code applied: 20% off"); }
-    else { state.coupon = null; toast(code ? "That promo code isn't valid." : "Enter a promo code first."); }
-    renderCart();
   });
 
   // Checkout: there is no order endpoint in the existing backend, so we don't pretend an order was placed.
