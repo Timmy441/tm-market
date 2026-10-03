@@ -1150,6 +1150,17 @@ function renderSharedHeader() {
   $$('.simple-nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href').replace(/\.html$/, '') === currentPage));
 }
 
+/* ---------- mobile menu: the ☰ button turns into ✕ while the menu is open ---------- */
+function setMobileMenu(open) {
+  const nav = $('#mainNav'), b = $('#mobileMenuBtn');
+  if (!nav || !b) return;
+  nav.classList.toggle('open', open);
+  b.setAttribute('aria-expanded', String(open));
+  b.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  b.textContent = open ? '✕' : '☰';
+}
+window.addEventListener('resize', () => { if (window.innerWidth > 680) setMobileMenu(false); });
+
 /* ---------- boot ---------- */
 document.addEventListener("DOMContentLoaded", () => {
   if (!routeAllowed || !guardRoute()) return;      // logged-out visitors are already being sent to index.html
@@ -1170,14 +1181,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target.closest('#logoutBtn')) return handleLogout();
     if (e.target.closest('#openProfileBtn')) return requireAuth(openProfileModal);
     if (e.target.closest('#mobileMenuBtn')) {
-      const nav = $('#mainNav'), b = $('#mobileMenuBtn');
-      const isOpen = nav.classList.toggle('open');
-      b.setAttribute('aria-expanded', String(isOpen));
-    }
+      const nav = $('#mainNav');
+      if (nav) setMobileMenu(!nav.classList.contains('open'));
+    } else if (e.target.closest('#mainNav a')) setMobileMenu(false);
     if (e.target.closest('#backTop')) window.scrollTo({ top: 0, behavior: 'smooth' });
   });
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
+    setMobileMenu(false);
     if (!$('#authModal').hidden) closeAuth(true);
     if ($('#profileModal') && !$('#profileModal').hidden) $('#profileModal').hidden = true;
   });
