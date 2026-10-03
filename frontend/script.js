@@ -585,6 +585,7 @@ function initStorefront() {
     clean.searchParams.delete('trxref');
     history.replaceState({}, '', clean.pathname + clean.search + clean.hash);
 
+    let allPaid = false;
     await Loader.run(async () => {
       const out = await apiRequest('GET', `/api/payments/verify?orderId=${encodeURIComponent(orderId)}&reference=${encodeURIComponent(reference)}`);
       if (!out.success) throw new Error(out.message || 'Payment verification failed.');
@@ -607,8 +608,162 @@ function initStorefront() {
       }
 
       toast(out.message || 'Payment confirmed. Your order is now confirmed.', 4500);
+      allPaid = true;
     }, { text: 'Verifying your payment…' });
+    if (allPaid) openOrders();   // show the new order with its delivery dates
   }
+  /* ---------- my orders + delivery tracking ---------- */
+  const TRACK_STEPS = [
+    { key: 'confirmed', label: 'Paid' },
+    { key: 'processing', label: 'Preparing' },
+    { key: 'shipped', label: 'On the way' },
+    { key: 'delivered', label: 'Delivered' }
+  ];
+  const ORDER_STATUS_LABEL = {
+    pending: 'Waiting for payment', confirmed: 'Paid', processing: 'Being prepared',
+    shipped: 'On the way', delivered: 'Delivered', cancelled: 'Cancelled'
+  };
+  const AUTO_NOTE = /^(Payment received|Buyer confirmed delivery|Delivery expected between)/;
+  const ordersView = { page: 1, total: 0, items: [], busy: false };
+
+  // "2026-10-08" -> a local date (no time-zone shifting).
+  function dayToDate(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  }
+  const fmtDay = d => d.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' });
+  const fmtStamp = iso => {
+    const d = iso ? new Date(iso) : null;
+    return d && !isNaN(d) ? d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : '';
+  };
+
+  // The sentence the buyer reads about when the goods arrive. Never invents a date.
+  function deliveryLine(o) {
+    if (o.status === 'delivered') {
+      const when = fmtStamp(o.deliveredAt);
+      return { text: when ? `Delivered on ${when}` : 'Delivered', late: false };
+    }
+    const from = o.deliveryWindow && dayToDate(o.deliveryWindow.from);
+    const to = o.deliveryWindow && dayToDate(o.deliveryWindow.to);
+    if (!from || !to) return { text: 'Your seller will confirm the delivery dates soon.', late: false };
+
+    const text = from.getTime() === to.getTime()
+      ? `Expected on ${fmtDay(from)}`
+      : `Expected between ${fmtDay(from)} and ${fmtDay(to)}`;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return { text, late: today.getTime() > to.getTime() };
+  }
+
+  function renderTracker(o) {
+    const at = TRACK_STEPS.findIndex(s => s.key === o.status);
+    const wrap = el('div', { class: 'track', role: 'list', 'aria-label': 'Order progress' });
+    TRACK_STEPS.forEach((s, i) => {
+      const ev = (o.events || []).find(e => e.status === s.key);   // earliest event for this step
+      const cls = 'track-step' + (i < at ? ' done' : '') + (i === at ? ' current' : '');
+      wrap.append(el('div', { class: cls, role: 'listitem' },
+        el('i', { 'aria-hidden': 'true', text: i <= at ? '✓' : '' }),
+        el('b', { text: s.label }),
+        el('small', { text: i <= at && ev ? fmtStamp(ev.at) : '' })
+      ));
+    });
+    return wrap;
+  }
+
+  function renderOrderCard(o) {
+    const card = el('article', { class: 'order-card' });
+    const who = (o.seller && o.seller.storeName) || 'TM Market seller';
+    card.append(el('div', { class: 'order-head' },
+      el('div', {}, el('strong', { text: o.orderNumber }), el('small', { text: `${who} · ${fmtStamp(o.createdAt)}` })),
+      el('span', { class: `order-pill is-${o.status}`, text: ORDER_STATUS_LABEL[o.status] || o.status })
+    ));
+
+    const list = el('ul', { class: 'order-items' });
+    (o.items || []).forEach(i => list.append(el('li', {},
+      el('span', { text: `${i.quantity} × ${i.name}` }), el('span', { text: money(i.totalPrice) })
+    )));
+    card.append(list, el('div', { class: 'order-total' }, el('span', { text: 'Total' }), el('strong', { text: money(o.total) })));
+
+    if (['confirmed', 'processing', 'shipped', 'delivered'].includes(o.status)) {
+      card.append(renderTracker(o));
+      const line = deliveryLine(o);
+      const box = el('div', { class: 'order-window' + (line.late ? ' is-late' : '') }, el('strong', { text: line.text }));
+      if (line.late) {
+        box.append(el('small', { text: 'This is taking longer than expected. Please contact support: tmmarketsupport@gmail.com' }));
+      }
+      const note = [...(o.events || [])].reverse().find(e => e.note && !AUTO_NOTE.test(e.note));
+      if (note) box.append(el('small', { text: `Seller note: ${note.note}` }));
+      card.append(box);
+    }
+
+    const actions = el('div', { class: 'order-actions' });
+    if (o.status === 'pending') {
+      const pay = el('button', { type: 'button', class: 'btn btn-primary', text: 'Pay now' });
+      pay.addEventListener('click', async () => {
+        pay.disabled = true;
+        try { await redirectToPaystack(o.id); }
+        catch (err) { pay.disabled = false; toast(err.message || 'Unable to start payment.', 4500); }
+      });
+      const cancel = el('button', { type: 'button', class: 'btn btn-ghost', text: 'Cancel order' });
+      cancel.addEventListener('click', async () => {
+        if (!confirm('Cancel this unpaid order?')) return;
+        cancel.disabled = true;
+        try { await apiRequest('POST', `/api/orders/${o.id}/cancel`); toast('Order cancelled.'); await loadOrders(true); }
+        catch (err) { cancel.disabled = false; toast(err.message || 'Unable to cancel this order.', 4500); }
+      });
+      actions.append(pay, cancel);
+    }
+    if (o.status === 'shipped') {
+      const got = el('button', { type: 'button', class: 'btn btn-primary', text: 'I have received this order' });
+      got.addEventListener('click', async () => {
+        if (!confirm('Confirm that you have received this order?')) return;
+        got.disabled = true;
+        try { await apiRequest('POST', `/api/orders/${o.id}/delivered`); toast('Thanks! Delivery confirmed.'); await loadOrders(true); }
+        catch (err) { got.disabled = false; toast(err.message || 'Unable to confirm delivery.', 4500); }
+      });
+      actions.append(got);
+    }
+    if (actions.children.length) card.append(actions);
+    return card;
+  }
+
+  function paintOrders(message) {
+    const box = $("#ordersList"), more = $("#ordersMore");
+    if (!box) return;
+    box.replaceChildren();
+    if (message) { box.append(el('p', { class: 'orders-note', text: message })); }
+    else if (!ordersView.items.length) {
+      box.append(el('p', { class: 'orders-note', text: 'No orders yet. When you buy something, you can track it here.' }));
+    } else {
+      ordersView.items.forEach(o => box.append(renderOrderCard(o)));
+    }
+    if (more) more.hidden = !!message || ordersView.items.length >= ordersView.total;
+  }
+
+  async function loadOrders(reset) {
+    if (ordersView.busy) return;
+    ordersView.busy = true;
+    if (reset) { ordersView.page = 1; ordersView.items = []; paintOrders('Loading your orders…'); }
+    try {
+      const out = await apiRequest('GET', `/api/orders/me?page=${ordersView.page}&limit=10`);
+      const rows = Array.isArray(out.orders) ? out.orders : [];
+      ordersView.items = reset ? rows : ordersView.items.concat(rows);
+      ordersView.total = Number(out.total) || 0;
+      paintOrders();
+    } catch (err) {
+      paintOrders(err.message || 'We could not load your orders. Please try again.');
+    } finally {
+      ordersView.busy = false;
+    }
+  }
+
+  function openOrders() {
+    const dlg = $("#ordersModal");
+    if (!dlg) { toast('Open the home page to see your orders.'); return; }
+    if (!dlg.open) dlg.showModal();
+    loadOrders(true);
+  }
+
   const preview = Number(document.body.dataset.preview || 0);   // landing page shows a small read-only preview
   const product = id => products.find(p => p.id === id || p.id === Number(id));
 
@@ -843,6 +998,9 @@ function initStorefront() {
   $("#modalClose")?.addEventListener("click", () => $("#productModal").close());
   $("#wishlistBtn")?.addEventListener("click", showWishlist);
   $("#wishlistNav")?.addEventListener("click", showWishlist);
+  $("#ordersNav")?.addEventListener("click", () => requireAuth(openOrders));
+  $("#ordersClose")?.addEventListener("click", () => $("#ordersModal").close());
+  $("#ordersMore")?.addEventListener("click", () => { ordersView.page += 1; loadOrders(false); });
 
   $("#modalContent")?.addEventListener("click", e => {
     const b = e.target.closest("[data-modal-add]");
@@ -955,6 +1113,7 @@ function initStorefront() {
   renderCart();
   updateResumePaymentsButton();
   if (params().get('cart') === '1' && Auth.isLoggedIn()) openCart();
+  if (params().get('orders') === '1' && Auth.isLoggedIn()) openOrders();
   if (readPaymentQueue().length > 0) {
     toast('You have pending seller payments. Open your bag and tap "Resume pending payment".', 4200);
   }

@@ -1,4 +1,5 @@
 const pool = require('../../db');
+const { defaultWindowDays } = require('../utils/delivery');
 
 // The buyer's own order plus buyer email for Paystack initialization.
 async function findOrderForPayment(orderId, userId) {
@@ -130,7 +131,22 @@ async function confirmPayment(orderId, reference, paidKobo, currency) {
     }
 
     await markPaid();
-    await client.query(`UPDATE orders SET status = 'confirmed', updated_at = NOW() WHERE id = $1`, [orderId]);
+    // Paid: confirm the order and give the buyer an expected delivery date range (Nigeria time).
+    // The seller can adjust the range later.
+    const days = defaultWindowDays();
+    await client.query(
+      `UPDATE orders
+       SET status = 'confirmed',
+           delivery_window_start = (NOW() AT TIME ZONE 'Africa/Lagos')::date + $2::int,
+           delivery_window_end = (NOW() AT TIME ZONE 'Africa/Lagos')::date + $3::int,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [orderId, days.min, days.max]
+    );
+    await client.query(
+      `INSERT INTO order_events (order_id, status, note) VALUES ($1, 'confirmed', 'Payment received')`,
+      [orderId]
+    );
     await client.query('COMMIT');
 
     return { outcome: 'paid', orderNumber: order.order_number };

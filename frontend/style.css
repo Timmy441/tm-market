@@ -164,3 +164,26 @@ button{padding:0}
 .detail-price{font-size:26px;margin:6px 0}.detail-meta{margin:4px 0;color:var(--muted)}
 .detail-desc{margin:14px 0;white-space:pre-line;overflow-wrap:anywhere}
 .detail-actions{display:flex;flex-wrap:wrap;gap:10px}.detail-actions .btn[disabled]{opacity:.5;cursor:not-allowed}
+/* ---- my orders + delivery tracking ---- */
+.nav-orders{background:transparent;font-size:13px;font-weight:700;color:var(--text)}.nav-orders:hover{color:var(--violet)}
+.orders-modal{width:min(720px,calc(100% - 30px));max-height:calc(100dvh - 30px);overflow:auto}
+.orders-content{padding:36px 32px 30px}.orders-content h2{margin:0 0 18px;color:var(--ink);font-size:32px;letter-spacing:-.04em}
+.orders-note{margin:30px 0;text-align:center;color:var(--muted)}
+.order-card{margin:0 0 16px;padding:18px;border:1px solid var(--line);border-radius:18px;background:var(--card)}
+.order-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.order-head strong{display:block;color:var(--ink);font-size:14px;overflow-wrap:anywhere}.order-head small{display:block;color:var(--muted);font-size:11px}
+.order-pill{flex:none;padding:5px 10px;border-radius:99px;background:var(--line);color:var(--ink);font-size:10px;font-weight:900}
+.order-pill.is-confirmed,.order-pill.is-processing,.order-pill.is-shipped{background:rgba(124,58,237,.12);color:var(--violet)}.order-pill.is-delivered{background:rgba(22,150,106,.14);color:var(--green)}.order-pill.is-cancelled{background:rgba(220,76,92,.12);color:var(--red)}
+.order-items{list-style:none;margin:14px 0 8px;padding:0}.order-items li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;color:var(--text);font-size:12px}.order-items li span:first-child{overflow-wrap:anywhere}.order-items li span:last-child{flex:none;color:var(--ink);font-weight:800}
+.order-total{display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--line);color:var(--ink);font-size:13px}
+.track{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:18px 0 12px}
+.track-step{position:relative;display:grid;justify-items:center;gap:3px;text-align:center}
+.track-step:not(:first-child):before{content:"";position:absolute;top:11px;right:50%;width:100%;height:3px;background:var(--line)}
+.track-step.done:not(:first-child):before,.track-step.current:not(:first-child):before{background:var(--violet)}
+.track-step i{position:relative;z-index:1;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--line);color:#fff;font-size:12px;font-style:normal;font-weight:900}
+.track-step.done i,.track-step.current i{background:var(--violet)}.track-step.current i{box-shadow:0 0 0 4px rgba(124,58,237,.18)}
+.track-step b{color:var(--ink);font-size:11px}.track-step:not(.done):not(.current) b{color:var(--muted);font-weight:700}.track-step small{min-height:14px;color:var(--muted);font-size:10px}
+.order-window{display:grid;gap:3px;padding:12px 14px;border-radius:12px;background:var(--cream);color:var(--ink);font-size:13px}.order-window small{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.order-window.is-late{background:rgba(245,181,68,.16)}
+.order-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.order-actions .btn{min-height:42px;font-size:13px}.order-actions .btn[disabled]{opacity:.5;cursor:not-allowed}
+.orders-more{width:100%;margin-top:6px}
+@media(max-width:680px){.orders-content{padding:30px 18px 22px}.orders-content h2{font-size:26px}.track-step b{font-size:10px}}

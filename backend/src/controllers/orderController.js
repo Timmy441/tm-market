@@ -5,10 +5,15 @@ const {
   listMyOrders,
   findMyOrder,
   cancelMyOrder,
-  listSellerOrders
+  listSellerOrders,
+  findSellerOrder,
+  advanceSellerOrder,
+  setDeliveryWindow,
+  confirmDeliveredByBuyer
 } = require('../models/orderModel');
 const { parsePositiveInt } = require('./productController');
 const { normalizeNigerianPhone } = require('../utils/phone');
+const { validateWindow } = require('../utils/delivery');
 
 const MAX_LINES = 20;        // different products in one checkout
 const MAX_QUANTITY = 100;    // of one product
@@ -50,7 +55,18 @@ function formatOrder(row) {
       unitPrice: Number(i.unit_price),
       totalPrice: Number(i.total_price)
     })),
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    // Tracking: the expected delivery date range (YYYY-MM-DD) and the history of steps.
+    deliveryWindow: row.delivery_window_start && row.delivery_window_end
+      ? { from: row.delivery_window_start, to: row.delivery_window_end }
+      : null,
+    shippedAt: row.shipped_at || null,
+    deliveredAt: row.delivered_at || null,
+    events: (Array.isArray(row.events) ? row.events : []).map(e => ({
+      status: e.status,
+      note: e.note || null,
+      at: e.at
+    }))
   };
 }
 
@@ -250,4 +266,92 @@ async function sellerOrders(req, res) {
   }
 }
 
-module.exports = { createOrder, myOrders, getOrder, cancelOrder, sellerOrders };
+/* ---------------- tracking: seller moves the order, buyer confirms arrival ---------------- */
+
+// Steps a seller may set, and the current statuses each one may follow.
+const SELLER_STEPS = {
+  processing: ['confirmed'],
+  shipped: ['confirmed', 'processing']
+};
+
+async function sellerUpdateStatus(req, res) {
+  try {
+    const id = parsePositiveInt(req.params.id);
+    if (!id) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    const status = req.body && req.body.status;
+    if (typeof status !== 'string' || !Object.prototype.hasOwnProperty.call(SELLER_STEPS, status)) {
+      return res.status(400).json({ success: false, message: 'Status must be "processing" or "shipped".' });
+    }
+    const note = req.body.note === undefined || req.body.note === null || req.body.note === ''
+      ? null
+      : text(req.body.note, { max: 200 });
+    if (note === null && req.body.note) {
+      return res.status(400).json({ success: false, message: 'The note is too long (200 characters at most).' });
+    }
+
+    const order = await findSellerOrder(id, req.user.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    const moved = await advanceSellerOrder(id, req.user.id, status, SELLER_STEPS[status], note);
+    if (!moved) {
+      return res.status(409).json({ success: false, message: 'This order cannot be moved to that step right now.' });
+    }
+
+    const fresh = await findSellerOrder(id, req.user.id);
+    return res.status(200).json({ success: true, message: 'Order updated.', order: formatOrder(fresh) });
+  } catch (error) {
+    console.error('Seller status error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to update this order' });
+  }
+}
+
+async function sellerSetDeliveryWindow(req, res) {
+  try {
+    const id = parsePositiveInt(req.params.id);
+    if (!id) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    const b = req.body || {};
+    const check = validateWindow(b.from, b.to);
+    if (!check.ok) return res.status(400).json({ success: false, message: check.message });
+
+    const order = await findSellerOrder(id, req.user.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    const saved = await setDeliveryWindow(id, req.user.id, check.from, check.to, `Delivery expected between ${check.from} and ${check.to}`);
+    if (!saved) {
+      return res.status(409).json({ success: false, message: 'The delivery window can no longer be changed for this order.' });
+    }
+
+    const fresh = await findSellerOrder(id, req.user.id);
+    return res.status(200).json({ success: true, message: 'Delivery window saved.', order: formatOrder(fresh) });
+  } catch (error) {
+    console.error('Delivery window error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to save the delivery window' });
+  }
+}
+
+async function confirmDelivered(req, res) {
+  try {
+    const id = parsePositiveInt(req.params.id);
+    if (!id) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    const order = await findMyOrder(id, req.user.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    if (order.status !== 'shipped' || !(await confirmDeliveredByBuyer(id, req.user.id))) {
+      return res.status(409).json({ success: false, message: 'You can confirm delivery once the seller has shipped the order.' });
+    }
+
+    const fresh = await findMyOrder(id, req.user.id);
+    return res.status(200).json({ success: true, message: 'Thanks! Delivery confirmed.', order: formatOrder(fresh) });
+  } catch (error) {
+    console.error('Confirm delivered error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to confirm delivery' });
+  }
+}
+
+module.exports = {
+  createOrder, myOrders, getOrder, cancelOrder, sellerOrders,
+  sellerUpdateStatus, sellerSetDeliveryWindow, confirmDelivered
+};

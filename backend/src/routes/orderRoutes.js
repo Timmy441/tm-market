@@ -12,5 +12,6 @@ router.post('/', c.createOrder);
 router.get('/me', c.myOrders);          // keep above '/:id'
 router.get('/:id', c.getOrder);
 router.post('/:id/cancel', c.cancelOrder);
+router.post('/:id/delivered', c.confirmDelivered); // buyer confirms the parcel arrived
 
 module.exports = router;

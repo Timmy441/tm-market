@@ -9,7 +9,18 @@ const ORDER_SELECT = `
     o.shipping_name, o.shipping_phone, o.shipping_address,
     o.shipping_city, o.shipping_state, o.shipping_country,
     o.created_at, o.updated_at,
+    to_char(o.delivery_window_start, 'YYYY-MM-DD') AS delivery_window_start,
+    to_char(o.delivery_window_end, 'YYYY-MM-DD') AS delivery_window_end,
+    o.shipped_at, o.delivered_at,
     sp.store_name AS seller_name,
+    COALESCE((
+      SELECT json_agg(json_build_object(
+        'status', oe.status,
+        'note', oe.note,
+        'at', oe.created_at
+      ) ORDER BY oe.created_at, oe.id)
+      FROM order_events oe WHERE oe.order_id = o.id
+    ), '[]'::json) AS events,
     COALESCE((
       SELECT json_agg(json_build_object(
         'product_id', oi.product_id,
@@ -145,7 +156,76 @@ async function listSellerOrders(sellerId, limit, offset) {
   return { orders: rows, total };
 }
 
+// ---- tracking ----
+
+// A paid order that belongs to this seller (never an unpaid one).
+async function findSellerOrder(id, sellerId) {
+  const r = await pool.query(
+    `${ORDER_SELECT} WHERE o.id = $1 AND o.seller_id = $2
+       AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')`,
+    [id, sellerId]
+  );
+  return r.rows[0] || null;
+}
+
+// Moves a seller's order forward (only from one of the allowed current statuses) and records the step.
+async function advanceSellerOrder(id, sellerId, newStatus, fromStatuses, note) {
+  const r = await pool.query(
+    `WITH upd AS (
+       UPDATE orders
+          SET status = $3::text,
+              shipped_at = CASE WHEN $3::text = 'shipped' THEN NOW() ELSE shipped_at END,
+              updated_at = NOW()
+        WHERE id = $1 AND seller_id = $2 AND status = ANY($4::text[])
+        RETURNING id
+     )
+     INSERT INTO order_events (order_id, status, note)
+     SELECT id, $3::text, $5::text FROM upd
+     RETURNING order_id`,
+    [id, sellerId, newStatus, fromStatuses, note || null]
+  );
+  return r.rowCount > 0;
+}
+
+// Sets or changes the delivery date range (only on a paid order that is not yet delivered).
+async function setDeliveryWindow(id, sellerId, from, to, note) {
+  const r = await pool.query(
+    `WITH upd AS (
+       UPDATE orders
+          SET delivery_window_start = $3::date, delivery_window_end = $4::date, updated_at = NOW()
+        WHERE id = $1 AND seller_id = $2 AND status IN ('confirmed', 'processing', 'shipped')
+        RETURNING id, status
+     )
+     INSERT INTO order_events (order_id, status, note)
+     SELECT id, status, $5::text FROM upd
+     RETURNING order_id`,
+    [id, sellerId, from, to, note || null]
+  );
+  return r.rowCount > 0;
+}
+
+// The buyer confirms the parcel arrived. Only works while the order is 'shipped'.
+async function confirmDeliveredByBuyer(id, userId) {
+  const r = await pool.query(
+    `WITH upd AS (
+       UPDATE orders
+          SET status = 'delivered', delivered_at = NOW(), updated_at = NOW()
+        WHERE id = $1 AND user_id = $2 AND status = 'shipped'
+        RETURNING id
+     )
+     INSERT INTO order_events (order_id, status, note)
+     SELECT id, 'delivered', 'Buyer confirmed delivery' FROM upd
+     RETURNING order_id`,
+    [id, userId]
+  );
+  return r.rowCount > 0;
+}
+
 module.exports = {
+  findSellerOrder,
+  advanceSellerOrder,
+  setDeliveryWindow,
+  confirmDeliveredByBuyer,
   getProductsForCheckout,
   countPendingOrders,
   createOrders,

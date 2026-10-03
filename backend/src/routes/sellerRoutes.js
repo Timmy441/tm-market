@@ -21,5 +21,7 @@ router.delete('/me/products/:id', authenticateToken, requireSeller, c.deleteMyPr
 
 // Paid orders for this seller's products (unpaid orders are never shown to sellers).
 router.get('/me/orders', authenticateToken, requireSeller, orders.sellerOrders);
+router.post('/me/orders/:id/status', authenticateToken, requireSeller, orders.sellerUpdateStatus);
+router.put('/me/orders/:id/delivery-window', authenticateToken, requireSeller, orders.sellerSetDeliveryWindow);
 
 module.exports = router;
