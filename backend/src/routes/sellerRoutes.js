@@ -1,6 +1,7 @@
 const express = require('express');
 
 const c = require('../controllers/sellerController');
+const orders = require('../controllers/orderController');
 const { authenticateToken, requireSeller } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -17,5 +18,8 @@ router.get('/me/products', authenticateToken, requireSeller, c.getMyProducts);
 router.post('/me/products', authenticateToken, requireSeller, c.createMyProduct);
 router.put('/me/products/:id', authenticateToken, requireSeller, c.updateMyProduct);
 router.delete('/me/products/:id', authenticateToken, requireSeller, c.deleteMyProduct);
+
+// Paid orders for this seller's products (unpaid orders are never shown to sellers).
+router.get('/me/orders', authenticateToken, requireSeller, orders.sellerOrders);
 
 module.exports = router;
