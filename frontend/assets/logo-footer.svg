@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 64">
+<defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+<rect x="2" y="2" width="60" height="60" rx="18" fill="url(#g)"/>
+<path d="M15 19h34v8H38v21h-9V27H15z" fill="white"/>
+<circle cx="51" cy="18" r="7" fill="#f5b544"/>
+<text x="74" y="42" font-family="Arial,sans-serif" font-size="30" font-weight="800" fill="#ffffff">TM</text>
+<text x="126" y="42" font-family="Arial,sans-serif" font-size="27" font-weight="700" fill="#c4b5fd">market</text>
+</svg>

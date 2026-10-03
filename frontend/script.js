@@ -770,7 +770,7 @@ function initStorefront() {
   $("#checkoutClose")?.addEventListener("click", () => $("#checkoutModal").close());
   $("#checkoutForm")?.addEventListener("submit", e => {
     e.preventDefault();
-    toast("Online ordering isn't available yet. Please contact support@tmmarket.com to complete your order.", 5000);
+    toast("Online ordering isn't available yet. Please contact tmmarketsupport@gmail.com to complete your order.", 5000);
   });
 
   $("#themeBtn")?.addEventListener("click", () => {
