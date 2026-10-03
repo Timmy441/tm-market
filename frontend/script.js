@@ -492,6 +492,7 @@ function initLandingGate() {
 
 /* ---------- storefront (grid, cart, wishlist, checkout) ---------- */
 function initStorefront() {
+  const PAYMENT_QUEUE_KEY = 'tm-market-payment-queue';
   const state = {
     filter: "All", query: "", sort: "newest", onlyWishlist: false, page: 1, total: 0, timer: null,
     cart: load("tm-market-cart", []),
@@ -531,6 +532,34 @@ function initStorefront() {
     renderCart();
   }
 
+  function readPaymentQueue() {
+    const raw = load(PAYMENT_QUEUE_KEY, []);
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(x => Number.parseInt(x, 10))
+      .filter(Number.isInteger)
+      .filter(x => x > 0);
+  }
+
+  function savePaymentQueue(ids) {
+    save(PAYMENT_QUEUE_KEY, Array.isArray(ids) ? ids : []);
+  }
+
+  async function redirectToPaystack(orderId) {
+    const callbackUrl = `${location.origin}${location.pathname}?payreturn=1&orderId=${encodeURIComponent(orderId)}`;
+    const pay = await Loader.run(
+      () => apiRequest('POST', '/api/payments/initialize', { orderId, callbackUrl }),
+      { text: 'Connecting to Paystack…' }
+    );
+
+    if (!pay.success || !pay.payment || !pay.payment.authorizationUrl) {
+      throw new Error(pay.message || 'Unable to start payment. Please try again.');
+    }
+
+    Loader.show('Redirecting to Paystack…');
+    location.href = pay.payment.authorizationUrl;
+  }
+
   async function verifyPaystackReturn() {
     const q = new URLSearchParams(location.search);
     const payReturn = q.get('payreturn');
@@ -554,6 +583,16 @@ function initStorefront() {
         if (details && details.order) removePurchasedItems(details.order);
       } catch {
         // Verification already succeeded; this read is best-effort to keep the cart in sync.
+      }
+
+      const queue = readPaymentQueue();
+      const nextOrderId = queue.shift();
+      savePaymentQueue(queue);
+
+      if (nextOrderId) {
+        toast('Payment confirmed. Redirecting for the next seller payment…', 3200);
+        await redirectToPaystack(nextOrderId);
+        return;
       }
 
       toast(out.message || 'Payment confirmed. Your order is now confirmed.', 4500);
@@ -851,27 +890,20 @@ function initStorefront() {
       );
 
       const orders = Array.isArray(created.orders) ? created.orders : [];
-      if (orders.length !== 1) {
-        await Promise.allSettled(
-          orders.map(o => apiRequest('POST', `/api/orders/${encodeURIComponent(o.id)}/cancel`))
-        );
-        throw new Error('Please checkout one seller at a time for now. Split orders are temporarily blocked.');
+      if (!orders.length) {
+        throw new Error('No order was created. Please try again.');
       }
 
-      const order = orders[0];
-      const callbackUrl = `${location.origin}${location.pathname}?payreturn=1&orderId=${encodeURIComponent(order.id)}`;
-      const pay = await Loader.run(
-        () => apiRequest('POST', '/api/payments/initialize', { orderId: order.id, callbackUrl }),
-        { text: 'Connecting to Paystack…' }
-      );
+      const ids = orders.map(o => Number(o.id)).filter(Number.isInteger);
+      const firstOrderId = ids.shift();
+      savePaymentQueue(ids);
 
-      if (!pay.success || !pay.payment || !pay.payment.authorizationUrl) {
-        throw new Error(pay.message || 'Unable to start payment. Please try again.');
+      if (orders.length > 1) {
+        toast(`Your bag was split into ${orders.length} seller orders. You will complete ${orders.length} quick payments.`, 4800);
       }
 
       $("#checkoutModal")?.close();
-      Loader.show('Redirecting to Paystack…');
-      location.href = pay.payment.authorizationUrl;
+      await redirectToPaystack(firstOrderId);
     } catch (err) {
       toast(err.message || 'Unable to start checkout right now.', 5000);
     } finally {
