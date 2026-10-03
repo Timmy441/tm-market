@@ -532,6 +532,16 @@ function initStorefront() {
     renderCart();
   }
 
+  function updateResumePaymentsButton() {
+    const btn = $("#resumePaymentsBtn");
+    if (!btn) return;
+    const queue = readPaymentQueue();
+    btn.hidden = queue.length === 0;
+    btn.textContent = queue.length <= 1
+      ? 'Resume pending payment →'
+      : `Resume ${queue.length} pending payments →`;
+  }
+
   function readPaymentQueue() {
     const raw = load(PAYMENT_QUEUE_KEY, []);
     if (!Array.isArray(raw)) return [];
@@ -543,6 +553,7 @@ function initStorefront() {
 
   function savePaymentQueue(ids) {
     save(PAYMENT_QUEUE_KEY, Array.isArray(ids) ? ids : []);
+    updateResumePaymentsButton();
   }
 
   async function redirectToPaystack(orderId) {
@@ -725,6 +736,7 @@ function initStorefront() {
     wrap.innerHTML = "";
     if (!state.cart.length) {
       wrap.innerHTML = '<div class="cart-empty"><div style="font-size:38px">🛍</div><strong>Your bag is waiting</strong><span>Add something you love and it will appear here.</span></div>';
+      updateResumePaymentsButton();
       return;
     }
     state.cart.forEach(item => {
@@ -733,6 +745,7 @@ function initStorefront() {
       line.innerHTML = `<img src="${esc(item.image)}" alt="${esc(item.name)}"><div><h3>${esc(item.name)}</h3><p>${money(item.price)}</p><div class="qty"><button data-qty="${esc(item.id)}" data-delta="-1" aria-label="Decrease">−</button><strong>${item.qty}</strong><button data-qty="${esc(item.id)}" data-delta="1" aria-label="Increase">+</button><button class="remove" data-remove="${esc(item.id)}" type="button">Remove</button></div></div><span class="line-total">${money(item.price * item.qty)}</span>`;
       wrap.appendChild(line);
     });
+    updateResumePaymentsButton();
   }
 
   function addToCart(id) {
@@ -843,6 +856,24 @@ function initStorefront() {
     closeCart();
     $("#checkoutModal")?.showModal();
   }));
+  $("#resumePaymentsBtn")?.addEventListener("click", () => requireAuth(async () => {
+    const queue = readPaymentQueue();
+    const nextOrderId = queue.shift();
+    if (!nextOrderId) {
+      savePaymentQueue([]);
+      toast('No pending payments left to resume.');
+      return;
+    }
+
+    savePaymentQueue(queue);
+
+    try {
+      await redirectToPaystack(nextOrderId);
+    } catch (err) {
+      savePaymentQueue([nextOrderId, ...readPaymentQueue()]);
+      toast(err.message || 'Unable to resume payment right now.', 5000);
+    }
+  }));
   $("#checkoutClose")?.addEventListener("click", () => $("#checkoutModal").close());
   $("#checkoutForm")?.addEventListener("submit", async e => {
     e.preventDefault();
@@ -922,7 +953,11 @@ function initStorefront() {
 
   loadProducts(true);
   renderCart();
+  updateResumePaymentsButton();
   if (params().get('cart') === '1' && Auth.isLoggedIn()) openCart();
+  if (readPaymentQueue().length > 0) {
+    toast('You have pending seller payments. Open your bag and tap "Resume pending payment".', 4200);
+  }
   verifyPaystackReturn().catch(() => {
     toast('We could not verify that payment yet. Check your orders and try again.', 4500);
   });
