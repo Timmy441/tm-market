@@ -11,6 +11,8 @@ const productRoutes = require('./src/routes/productRoutes');
 const sellerRoutes = require('./src/routes/sellerRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const orderRoutes = require('./src/routes/orderRoutes');
+const paymentRoutes = require('./src/routes/paymentRoutes');
+const { paystackWebhook } = require('./src/controllers/paymentController');
 const { getCategories } = require('./src/controllers/productController');
 
 if (!process.env.JWT_SECRET) {
@@ -23,6 +25,10 @@ const app = express();
 app.set('trust proxy', 1); // running behind Fly's proxy
 app.use(helmet());
 app.use(morgan('tiny'));
+
+// Webhook signature verification requires the untouched raw request body.
+app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), paystackWebhook);
+
 app.use(express.json({ limit: '100kb' }));
 
 const allowedOrigins = [
@@ -76,6 +82,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/sellers', sellerRoutes);
 app.use('/api/admin', adminLimiter, adminRoutes);
 app.use('/api/orders', orderLimiter, orderRoutes);
+app.use('/api/payments', orderLimiter, paymentRoutes);
 
 app.use((req, res) => res.status(404).json({ success: false, message: 'Not found' }));
 

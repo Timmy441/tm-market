@@ -498,6 +498,67 @@ function initStorefront() {
     wishlist: load("tm-market-wishlist", []),
     coupon: null
   };
+
+  function inferCity(address, stateName) {
+    const parts = String(address || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const tail = parts[parts.length - 1];
+      if (tail.length >= 2 && tail.toLowerCase() !== String(stateName || '').toLowerCase()) return tail;
+      const prev = parts[parts.length - 2];
+      if (prev && prev.length >= 2) return prev;
+    }
+    if (typeof stateName === 'string' && stateName.trim().length >= 2) return stateName.trim();
+    return 'Nigeria';
+  }
+
+  function removePurchasedItems(order) {
+    const items = Array.isArray(order && order.items) ? order.items : [];
+    const remaining = [...state.cart];
+
+    for (const item of items) {
+      const productId = String(item.productId);
+      let need = Number(item.quantity) || 0;
+      for (const line of remaining) {
+        if (String(line.id) !== productId || need <= 0) continue;
+        const take = Math.min(line.qty, need);
+        line.qty -= take;
+        need -= take;
+      }
+    }
+
+    state.cart = remaining.filter(x => x.qty > 0);
+    save("tm-market-cart", state.cart);
+    renderCart();
+  }
+
+  async function verifyPaystackReturn() {
+    const q = new URLSearchParams(location.search);
+    const payReturn = q.get('payreturn');
+    const orderId = q.get('orderId');
+    const reference = q.get('reference') || q.get('trxref');
+    if (payReturn !== '1' || !orderId || !reference || !Auth.isLoggedIn()) return;
+
+    const clean = new URL(location.href);
+    clean.searchParams.delete('payreturn');
+    clean.searchParams.delete('orderId');
+    clean.searchParams.delete('reference');
+    clean.searchParams.delete('trxref');
+    history.replaceState({}, '', clean.pathname + clean.search + clean.hash);
+
+    await Loader.run(async () => {
+      const out = await apiRequest('GET', `/api/payments/verify?orderId=${encodeURIComponent(orderId)}&reference=${encodeURIComponent(reference)}`);
+      if (!out.success) throw new Error(out.message || 'Payment verification failed.');
+
+      try {
+        const details = await apiRequest('GET', `/api/orders/${encodeURIComponent(orderId)}`);
+        if (details && details.order) removePurchasedItems(details.order);
+      } catch {
+        // Verification already succeeded; this read is best-effort to keep the cart in sync.
+      }
+
+      toast(out.message || 'Payment confirmed. Your order is now confirmed.', 4500);
+    }, { text: 'Verifying your payment…' });
+  }
   const preview = Number(document.body.dataset.preview || 0);   // landing page shows a small read-only preview
   const product = id => products.find(p => p.id === id || p.id === Number(id));
 
@@ -736,7 +797,6 @@ function initStorefront() {
     if (b) { requireAuth(() => addToCart(b.dataset.modalAdd)); $("#productModal").close(); }
   });
 
-  // Checkout: there is no order endpoint in the existing backend, so we don't pretend an order was placed.
   $("#checkoutBtn")?.addEventListener("click", () => requireAuth(() => {
     if (!state.cart.length) { toast("Your bag is empty. Add something first."); return; }
     const u = Auth.user(), f = $("#checkoutForm");
@@ -745,9 +805,82 @@ function initStorefront() {
     $("#checkoutModal")?.showModal();
   }));
   $("#checkoutClose")?.addEventListener("click", () => $("#checkoutModal").close());
-  $("#checkoutForm")?.addEventListener("submit", e => {
+  $("#checkoutForm")?.addEventListener("submit", async e => {
     e.preventDefault();
-    toast("Online ordering isn't available yet. Please contact tmmarketsupport@gmail.com to complete your order.", 5000);
+    if (!Auth.isLoggedIn()) { openAuth('login', 'Please log in to continue.'); return; }
+
+    const form = e.currentTarget;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const oldText = submitBtn ? submitBtn.textContent : '';
+
+    try {
+      const paymentMethod = String(form.elements.payment?.value || '').trim().toLowerCase();
+      if (paymentMethod !== 'pay online') {
+        toast('Please choose "Pay online" to continue.');
+        return;
+      }
+
+      if (!state.cart.length) {
+        toast('Your bag is empty. Add something first.');
+        return;
+      }
+
+      const shippingAddress = String(form.elements.address?.value || '').trim();
+      const shippingState = String(form.elements.state?.value || '').trim();
+      const shippingCity = inferCity(shippingAddress, shippingState);
+
+      const payload = {
+        items: state.cart.map(i => ({ productId: Number(i.id), quantity: Number(i.qty) })),
+        shipping: {
+          name: String(form.elements.name?.value || '').trim(),
+          phone: String(form.elements.phone?.value || '').trim(),
+          address: shippingAddress,
+          city: shippingCity,
+          state: shippingState
+        }
+      };
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Preparing payment…';
+      }
+
+      const created = await Loader.run(
+        () => apiRequest('POST', '/api/orders', payload),
+        { text: 'Creating your order…' }
+      );
+
+      const orders = Array.isArray(created.orders) ? created.orders : [];
+      if (orders.length !== 1) {
+        await Promise.allSettled(
+          orders.map(o => apiRequest('POST', `/api/orders/${encodeURIComponent(o.id)}/cancel`))
+        );
+        throw new Error('Please checkout one seller at a time for now. Split orders are temporarily blocked.');
+      }
+
+      const order = orders[0];
+      const callbackUrl = `${location.origin}${location.pathname}?payreturn=1&orderId=${encodeURIComponent(order.id)}`;
+      const pay = await Loader.run(
+        () => apiRequest('POST', '/api/payments/initialize', { orderId: order.id, callbackUrl }),
+        { text: 'Connecting to Paystack…' }
+      );
+
+      if (!pay.success || !pay.payment || !pay.payment.authorizationUrl) {
+        throw new Error(pay.message || 'Unable to start payment. Please try again.');
+      }
+
+      $("#checkoutModal")?.close();
+      Loader.show('Redirecting to Paystack…');
+      location.href = pay.payment.authorizationUrl;
+    } catch (err) {
+      toast(err.message || 'Unable to start checkout right now.', 5000);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = oldText || 'Place order securely';
+      }
+      Loader.hide();
+    }
   });
 
   $("#themeBtn")?.addEventListener("click", () => {
@@ -758,6 +891,9 @@ function initStorefront() {
   loadProducts(true);
   renderCart();
   if (params().get('cart') === '1' && Auth.isLoggedIn()) openCart();
+  verifyPaystackReturn().catch(() => {
+    toast('We could not verify that payment yet. Check your orders and try again.', 4500);
+  });
 }
 
 /* ---------- shop page (product.html): rendered from the same products list ---------- */
