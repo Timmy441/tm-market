@@ -755,9 +755,6 @@ function initStorefront() {
     else { state.coupon = null; toast(code ? "That promo code isn't valid." : "Enter a promo code first."); }
     renderCart();
   });
-  $("#copyCode")?.addEventListener("click", () => {
-    (navigator.clipboard?.writeText("TM20") || Promise.reject()).then(() => toast("Code TM20 copied"), () => toast("Use code TM20 at checkout"));
-  });
 
   // Checkout: there is no order endpoint in the existing backend, so we don't pretend an order was placed.
   $("#checkoutBtn")?.addEventListener("click", () => requireAuth(() => {
