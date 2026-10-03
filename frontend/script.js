@@ -1018,7 +1018,11 @@ async function apiRequest(method, path, body) {
   let data = {};
   try { data = await res.json(); } catch { /* non-JSON */ }
   if (res.status === 401) { Auth.clear(); guardRoute(); throw new Error('Your session has expired. Please log in again.'); }
-  if (!res.ok) { const e = new Error(res.status < 500 && data.message ? data.message : 'Something went wrong. Please try again.'); e.status = res.status; throw e; }
+  if (!res.ok) {
+    const e = new Error(data && data.message ? data.message : 'Something went wrong. Please try again.');
+    e.status = res.status;
+    throw e;
+  }
   return data;
 }
 

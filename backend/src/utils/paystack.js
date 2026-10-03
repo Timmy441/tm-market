@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const BASE_URL = 'https://api.paystack.co';
 
 function getSecretKey() {
-  return process.env.PAYSTACK_SECRET_KEY || '';
+  return (process.env.PAYSTACK_SECRET_KEY || '').trim();
 }
 
 // Live keys remain blocked until explicitly enabled so real charges are never accidental.
