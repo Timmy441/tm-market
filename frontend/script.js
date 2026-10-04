@@ -105,8 +105,8 @@ const Auth = {
   save(data) {
     localStorage.setItem(TOKEN_KEY, data.token);
     const user = data.user || {};
-    const extras = load(profileExtraKey(user.email), {});   // phone/address/avatar the user saved earlier on this device
-    localStorage.setItem(USER_KEY, JSON.stringify({ ...user, ...extras }));
+    // The profile (phone, address, picture) now lives on the server; avatarUrl is shown as "avatar".
+    localStorage.setItem(USER_KEY, JSON.stringify({ ...user, avatar: user.avatarUrl || undefined }));
   },
   clear() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); }
 };
@@ -186,6 +186,7 @@ async function apiPost(path, body) {
 
 /* ---------- login / sign-up modal (built once, shared by every page) ---------- */
 let pending = null;   // { href?: string, run?: function } - what the visitor was trying to do
+let resetToken = null;   // from the emailed link (#reset=...), kept in memory only
 
 function buildAuthModal() {
   if ($('#authModal')) return;
@@ -206,6 +207,23 @@ function buildAuthModal() {
       <div class="form-group"><label for="login-email">Email</label><input type="email" id="login-email" placeholder="email@example.com" autocomplete="email" required></div>
       <div class="form-group"><label for="login-password">Password</label><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" required></div>
       <button type="submit" class="btn btn-primary btn-block">Log In</button>
+      <p class="auth-aux"><button type="button" class="link-btn" id="forgotLink">Forgot password?</button></p>
+    </form>
+    <form id="forgot-form" class="auth-form" hidden>
+      <h3>Reset your password</h3>
+      <p class="form-note">Enter your account email and we will send you a link to choose a new password.</p>
+      <p id="forgotError" class="form-error" role="alert" hidden></p>
+      <div class="form-group"><label for="forgot-email">Email</label><input type="email" id="forgot-email" placeholder="email@example.com" autocomplete="email" required></div>
+      <button type="submit" class="btn btn-primary btn-block">Send reset link</button>
+      <p class="auth-aux"><button type="button" class="link-btn" data-back-login>Back to log in</button></p>
+    </form>
+    <form id="reset-form" class="auth-form" hidden>
+      <h3>Choose a new password</h3>
+      <p id="resetError" class="form-error" role="alert" hidden></p>
+      <div class="form-group"><label for="reset-new">New password</label><input type="password" id="reset-new" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required></div>
+      <div class="form-group"><label for="reset-confirm">Confirm new password</label><input type="password" id="reset-confirm" autocomplete="new-password" required></div>
+      <button type="submit" class="btn btn-primary btn-block">Update password</button>
+      <p class="auth-aux"><button type="button" class="link-btn" data-back-login>Back to log in</button></p>
     </form>
     <form id="register-form" class="auth-form" hidden>
       <h3>Create an account</h3>
@@ -233,14 +251,52 @@ function buildAuthModal() {
     e.preventDefault();
     handleRegister($('#reg-name').value.trim(), $('#reg-email').value.trim(), $('#reg-phone').value.trim(), $('#reg-password').value);
   });
+
+  $('#forgotLink').addEventListener('click', () => {
+    setFormError('forgot', ''); setNotice('');
+    $('#forgot-email').value = $('#login-email').value.trim();
+    switchTab('forgot');
+    $('#forgot-email').focus();
+  });
+  d.querySelectorAll('[data-back-login]').forEach(b => b.addEventListener('click', () => { setNotice(''); switchTab('login'); }));
+
+  $('#forgot-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    setFormError('forgot', '');
+    setFormBusy('#forgot-form', true, 'Sending…');
+    try {
+      const data = await apiPost('/api/forgot-password', { email: $('#forgot-email').value.trim() });
+      switchTab('login');
+      setNotice(data.message || 'If an account exists for that email, we have sent a reset link.');
+    } catch (ex) { setFormError('forgot', ex.message); }
+    finally { setFormBusy('#forgot-form', false); }
+  });
+
+  $('#reset-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    setFormError('reset', '');
+    const nw = $('#reset-new').value, cf = $('#reset-confirm').value;
+    if (nw.length < 8) return setFormError('reset', 'New password must be at least 8 characters.');
+    if (nw !== cf) return setFormError('reset', 'The new passwords do not match.');
+    setFormBusy('#reset-form', true, 'Updating…');
+    try {
+      const data = await apiPost('/api/reset-password', { token: resetToken, newPassword: nw });
+      resetToken = null;
+      $('#reset-form').reset();
+      switchTab('login');
+      setNotice(data.message || 'Your password has been updated. Please log in.');
+    } catch (ex) { setFormError('reset', ex.message); }
+    finally { setFormBusy('#reset-form', false); }
+  });
 }
 
 function switchTab(tab) {
-  const login = tab !== 'register';
-  $('#tabLoginBtn').classList.toggle('active', login);
-  $('#tabRegisterBtn').classList.toggle('active', !login);
-  $('#login-form').hidden = !login;
-  $('#register-form').hidden = login;
+  const forms = { login: '#login-form', register: '#register-form', forgot: '#forgot-form', reset: '#reset-form' };
+  if (!forms[tab]) tab = 'login';
+  for (const [name, sel] of Object.entries(forms)) $(sel).hidden = name !== tab;
+  $('#tabLoginBtn').classList.toggle('active', tab === 'login');
+  $('#tabRegisterBtn').classList.toggle('active', tab === 'register');
+  $('.auth-tabs').hidden = tab === 'forgot' || tab === 'reset';
 }
 function setNotice(text) { const n = $('#authNotice'); if (!n) return; n.textContent = text || ''; n.hidden = !text; }
 function setFormError(which, text) { const n = $(`#${which}Error`); if (!n) return; n.textContent = text || ''; n.hidden = !text; }
@@ -255,10 +311,10 @@ function openAuth(tab = 'login', notice = '') {
   buildAuthModal();
   switchTab(tab);
   setNotice(notice);
-  setFormError('login', ''); setFormError('register', '');
+  setFormError('login', ''); setFormError('register', ''); setFormError('forgot', ''); setFormError('reset', '');
   $('#authModal').hidden = false;
   document.body.style.overflow = 'hidden';
-  setTimeout(() => $(tab === 'register' ? '#reg-name' : '#login-email')?.focus(), 60);
+  setTimeout(() => $({ register: '#reg-name', reset: '#reset-new', forgot: '#forgot-email' }[tab] || '#login-email')?.focus(), 60);
 }
 function closeAuth(manual = false) {
   const m = $('#authModal');
@@ -365,7 +421,7 @@ function updateAuthUI() {
   });
 }
 
-/* ---------- profile modal (logged-in pages) ---------- */
+/* ---------- profile modal (logged-in pages): saved on the server ---------- */
 function buildProfileModal() {
   if ($('#profileModal')) return;
   const d = el('div', { id: 'profileModal', class: 'modal-overlay' });
@@ -378,17 +434,28 @@ function buildProfileModal() {
       <div class="avatar-wrapper">
         <img id="profileAvatarPrev" src="assets/default-avatar.svg" alt="Profile picture" class="profile-avatar-img">
         <label for="avatarInput" class="avatar-edit-badge" title="Change profile picture">📷</label>
-        <input type="file" id="avatarInput" accept="image/*" hidden>
+        <input type="file" id="avatarInput" accept="image/jpeg,image/png,image/webp" hidden>
       </div>
       <small>Tap the camera to change your picture</small>
     </div>
-    <form id="profile-form">
-      <div class="form-group"><label for="profile-name">Full Name</label><input type="text" id="profile-name" required></div>
+    <form id="profile-form" novalidate>
+      <p class="form-error" id="profileError" role="alert" hidden></p>
+      <p class="form-note" id="profileLegacyNote" hidden>We found details saved on this device. Press Save to keep them on your account.</p>
+      <div class="form-group"><label for="profile-name">Full Name</label><input type="text" id="profile-name" maxlength="200" required></div>
       <div class="form-group"><label for="profile-email">Email Address</label><input type="email" id="profile-email" disabled></div>
-      <div class="form-group"><label for="profile-phone">Phone Number</label><input type="tel" id="profile-phone" placeholder="+234 800 000 0000"></div>
-      <div class="form-group"><label for="profile-address">Delivery Address</label><input type="text" id="profile-address" placeholder="123 Main St, Lagos"></div>
+      <div class="form-group"><label for="profile-phone">Phone Number</label><input type="tel" id="profile-phone" inputmode="tel" placeholder="08012345678"></div>
+      <div class="form-group"><label for="profile-address">Delivery Address</label><input type="text" id="profile-address" maxlength="500" placeholder="123 Main St, Lagos"></div>
       <button type="submit" class="btn btn-primary btn-block">Save Changes</button>
-      <p class="form-note">Profile changes are saved on this device only.</p>
+      <p class="form-note">Your phone number identifies your account, so each number can belong to one account only.</p>
+    </form>
+    <form id="password-form" class="profile-sep" novalidate>
+      <h4>Change password</h4>
+      <p class="form-error" id="passwordError" role="alert" hidden></p>
+      <div class="form-group"><label for="pw-current">Current password</label><input type="password" id="pw-current" autocomplete="current-password"></div>
+      <div class="form-group"><label for="pw-new">New password</label><input type="password" id="pw-new" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div>
+      <div class="form-group"><label for="pw-confirm">Confirm new password</label><input type="password" id="pw-confirm" autocomplete="new-password"></div>
+      <button type="submit" class="btn btn-ghost btn-block">Update password</button>
+      <p class="form-note">Changing your password signs you out on your other devices.</p>
     </form>
   </div>`;
   document.body.appendChild(d);
@@ -397,54 +464,100 @@ function buildProfileModal() {
   d.addEventListener('click', e => { if (e.target === d && d._down) d.hidden = true; });
   $('#closeProfileModal').addEventListener('click', () => { d.hidden = true; });
 
+  let pendingAvatar = null;       // resized picture waiting to be uploaded when the profile is saved
+  d._clearPending = () => { pendingAvatar = null; };
+
   $('#avatarInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) { toast('Please choose an image file.'); return; }
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) { toast('Please choose a JPG, PNG or WebP image.'); return; }
     const reader = new FileReader();
     reader.onerror = () => toast('Unable to read that image. Please try another.');
     reader.onload = () => {
       const img = new Image();
       img.onerror = () => toast('Unable to read that image. Please try another.');
-      img.onload = () => {                     // shrink to 256px so it fits in browser storage
+      img.onload = () => {                     // shrink to 256px before uploading
         const s = Math.min(1, 256 / Math.max(img.width, img.height));
         const c = document.createElement('canvas');
         c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
         $('#profileAvatarPrev').src = c.toDataURL('image/jpeg', 0.85);
+        c.toBlob(b => { pendingAvatar = b; }, 'image/jpeg', 0.85);
       };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
   });
 
-  $('#profile-form').addEventListener('submit', e => {
+  $('#profile-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const user = Auth.user();
-    user.name = $('#profile-name').value.trim() || user.name;
-    user.phone = $('#profile-phone').value.trim();
-    user.address = $('#profile-address').value.trim();
-    const avatar = $('#profileAvatarPrev').getAttribute('src');
-    user.avatar = avatar && avatar.startsWith('data:') ? avatar : undefined;
+    const err = $('#profileError'); err.hidden = true;
+    const body = { address: $('#profile-address').value.trim() };
+    const name = $('#profile-name').value.trim();
+    const phone = $('#profile-phone').value.trim();
+    if (name) body.name = name;
+    if (phone) body.phone = phone;
+    let photoWarning = '';
     try {
-      localStorage.setItem(USER_KEY, JSON.stringify(user));
-      save(profileExtraKey(user.email), { name: user.name, phone: user.phone, address: user.address, avatar: user.avatar });
-    } catch { toast('Unable to save your changes. Please try again.'); return; }
+      await Loader.run(async () => {
+        if (pendingAvatar) {
+          try { body.avatarUrl = await uploadImage(pendingAvatar, '/api/me/uploads/sign'); }
+          catch (ex) { photoWarning = ex.message; }          // a failed picture must not block the rest
+        }
+        const data = await apiRequest('PUT', '/api/me/profile', body);
+        Auth.save({ token: Auth.token(), user: data.user });
+      }, { text: 'Saving your profile…' });
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; return; }
+    pendingAvatar = null;
     updateAuthUI();
     d.hidden = true;
-    toast('Profile updated successfully!');
+    toast(photoWarning ? `Profile saved, but the picture was not: ${photoWarning}` : 'Profile updated successfully!', photoWarning ? 5000 : undefined);
+  });
+
+  $('#password-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const err = $('#passwordError'); err.hidden = true;
+    const cur = $('#pw-current').value, nw = $('#pw-new').value, cf = $('#pw-confirm').value;
+    const fail = t => { err.textContent = t; err.hidden = false; };
+    if (!cur) return fail('Please enter your current password.');
+    if (nw.length < 8) return fail('New password must be at least 8 characters.');
+    if (nw !== cf) return fail('The new passwords do not match.');
+    try {
+      const data = await Loader.run(() => apiRequest('POST', '/api/me/change-password', { currentPassword: cur, newPassword: nw }), { text: 'Updating password…' });
+      Auth.save(data);                      // fresh token keeps this device signed in
+      $('#password-form').reset();
+      toast('Password changed. Other devices were signed out.', 5000);
+    } catch (ex) { fail(ex.message); }
   });
 }
 
-function openProfileModal() {
-  buildProfileModal();
-  const user = Auth.user();
+function fillProfileForm(user) {
   $('#profile-name').value = user.name || '';
   $('#profile-email').value = user.email || '';
   $('#profile-phone').value = user.phone || '';
   $('#profile-address').value = user.address || '';
-  $('#profileAvatarPrev').src = user.avatar || 'assets/default-avatar.svg';
+  $('#profileAvatarPrev').src = user.avatar || user.avatarUrl || 'assets/default-avatar.svg';
+}
+
+async function openProfileModal() {
+  buildProfileModal();
+  $('#profileModal')._clearPending?.();
+  $('#profileError').hidden = true; $('#passwordError').hidden = true; $('#profileLegacyNote').hidden = true;
+  fillProfileForm(Auth.user());
   $('#profileModal').hidden = false;
+
+  try {                                    // refresh from the server so every device shows the same profile
+    const { user } = await apiRequest('GET', '/api/me');
+    Auth.save({ token: Auth.token(), user });
+    fillProfileForm(Auth.user());
+    updateAuthUI();
+    // Details saved on this device by the old version: offer to move them to the account.
+    const old = load(profileExtraKey(user.email), {});
+    let used = false;
+    if (!$('#profile-phone').value && old.phone) { $('#profile-phone').value = old.phone; used = true; }
+    if (!$('#profile-address').value && old.address) { $('#profile-address').value = old.address; used = true; }
+    $('#profileLegacyNote').hidden = !used;
+  } catch { /* offline or session problem: the stored copy stays on screen */ }
 }
 
 /* ---------- landing page (index.html): look freely, any click asks for login ---------- */
@@ -1255,10 +1368,10 @@ async function apiRequest(method, path, body) {
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Images go straight from the browser to Cloudinary using a signature made by our backend.
-async function uploadImage(file) {
+async function uploadImage(file, signPath = '/api/sellers/me/uploads/sign') {
   if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error('Images must be JPG, PNG or WebP.');
   if (file.size > 5 * 1024 * 1024) throw new Error('Each image must be under 5 MB.');
-  const sig = await apiRequest('POST', '/api/sellers/me/uploads/sign');
+  const sig = await apiRequest('POST', signPath);
   const fd = new FormData();
   fd.append('file', file); fd.append('api_key', sig.apiKey); fd.append('timestamp', sig.timestamp);
   fd.append('folder', sig.folder); fd.append('signature', sig.signature);
@@ -1674,6 +1787,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   renderSharedHeader();
   buildAuthModal();
+  // Arrived from a password-reset email: take the token out of the address bar and ask for a new password.
+  const resetMatch = /^#reset=([a-f0-9]{64})$/.exec(location.hash);
+  if (resetMatch) {
+    resetToken = resetMatch[1];
+    history.replaceState(null, '', location.pathname + location.search);
+    openAuth('reset');
+  }
   Loader.ensure();
   updateAuthUI();
   updateBagCount();

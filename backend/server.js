@@ -76,6 +76,9 @@ app.get('/api/health', (req, res) => res.json({ success: true }));
 // Same public paths as before: POST /api/register, POST /api/login (plus GET /api/me)
 app.use('/api/register', authLimiter);
 app.use('/api/login', authLimiter);
+app.use('/api/me/change-password', authLimiter);
+app.use('/api/forgot-password', authLimiter);
+app.use('/api/reset-password', authLimiter);
 app.use('/api', authRoutes);
 app.get('/api/categories', getCategories);
 app.use('/api/products', productRoutes);
