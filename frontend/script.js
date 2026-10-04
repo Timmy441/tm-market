@@ -1360,12 +1360,171 @@ function renderOpenStore(root) {
   });
 }
 
+/* ---------- seller orders: set delivery dates and move paid orders forward ---------- */
+function initSellerOrders(box) {
+  const host = $('#sellOrders');
+  const badge = $('#ordersBadge');
+  const tabs = [...box.querySelectorAll('[data-sell-tab]')];
+  const state = { items: [], total: 0, page: 1, busy: false, loaded: false, touched: false };
+
+  const LABEL = { confirmed: 'Paid, ready to prepare', processing: 'Preparing', shipped: 'Shipped', delivered: 'Delivered' };
+  const RANK = { confirmed: 0, processing: 0, shipped: 1, delivered: 2 };
+
+  const toDate = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '')); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const pretty = d => d.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' });
+  const stamp = iso => { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''; };
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const toShip = () => state.items.filter(o => o.status === 'confirmed' || o.status === 'processing').length;
+
+  function showTab(name) {
+    tabs.forEach(t => t.classList.toggle('on', t.dataset.sellTab === name));
+    $('#sellProducts').hidden = name !== 'products';
+    host.hidden = name !== 'orders';
+    if (name === 'orders' && !state.loaded) load(true);
+  }
+  tabs.forEach(t => t.addEventListener('click', () => { state.touched = true; showTab(t.dataset.sellTab); }));
+
+  function windowLine(o) {
+    const from = o.deliveryWindow && toDate(o.deliveryWindow.from);
+    const to = o.deliveryWindow && toDate(o.deliveryWindow.to);
+    if (!from || !to) return { text: 'No delivery dates set yet', late: false };
+    const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return {
+      text: from.getTime() === to.getTime() ? `Delivery: ${pretty(from)}` : `Delivery: ${pretty(from)} to ${pretty(to)}`,
+      late: o.status !== 'delivered' && today.getTime() > to.getTime()
+    };
+  }
+
+  function card(o) {
+    const c = el('article', { class: 'order-card so-card' });
+    c.append(el('div', { class: 'order-head' },
+      el('div', {}, el('strong', { text: o.orderNumber }), el('small', { text: `Placed ${stamp(o.createdAt)}` })),
+      el('span', { class: `order-pill is-${o.status}`, text: LABEL[o.status] || o.status })
+    ));
+
+    const list = el('ul', { class: 'order-items' });
+    (o.items || []).forEach(i => list.append(el('li', {}, el('span', { text: `${i.quantity} × ${i.name}` }), el('span', { text: money(i.totalPrice) }))));
+    c.append(list, el('div', { class: 'order-total' }, el('span', { text: 'Total' }), el('strong', { text: money(o.total) })));
+
+    const s = o.shipping || {};
+    const digits = String(s.phone || '').replace(/\D/g, '');
+    const where = [s.address, s.city, s.state].filter(Boolean).join(', ');
+    const deliver = el('div', { class: 'so-deliver' },
+      el('strong', { text: 'Deliver to' }),
+      el('span', { text: s.name || '' }),
+      el('span', { text: where })
+    );
+    if (digits) {
+      const tel = el('a', { href: `tel:+${digits}`, text: s.phone });
+      const wa = el('a', { href: `https://wa.me/${digits}`, target: '_blank', rel: 'noopener', text: 'WhatsApp the buyer' });
+      deliver.append(el('span', { class: 'so-contact' }, tel, document.createTextNode(' · '), wa));
+    }
+    c.append(deliver);
+
+    const w = windowLine(o);
+    const win = el('div', { class: 'order-window' + (w.late ? ' is-late' : '') }, el('strong', { text: w.text }));
+    if (w.late) win.append(el('small', { text: 'The delivery dates have passed. Update the dates or contact the buyer.' }));
+    c.append(win);
+
+    const msg = el('p', { class: 'so-msg', role: 'alert', hidden: true });
+    const say = t => { msg.textContent = t; msg.hidden = !t; };
+
+    if (o.status === 'delivered') {
+      c.append(el('p', { class: 'so-done', text: 'Delivered. Nothing more to do.' }));
+      return c;
+    }
+
+    // delivery dates
+    const now = new Date();
+    const fromIn = el('input', { type: 'date', 'aria-label': 'Delivery from', min: ymd(now), value: o.deliveryWindow ? o.deliveryWindow.from : '' });
+    const toIn = el('input', { type: 'date', 'aria-label': 'Delivery to', min: ymd(now), value: o.deliveryWindow ? o.deliveryWindow.to : '' });
+    const saveDates = el('button', { type: 'button', class: 'btn btn-ghost', text: 'Save dates' });
+    c.append(el('div', { class: 'so-dates' }, el('label', {}, el('small', { text: 'From' }), fromIn), el('label', {}, el('small', { text: 'To' }), toIn), saveDates));
+
+    saveDates.addEventListener('click', async () => {
+      say(''); saveDates.disabled = true;
+      try {
+        await apiRequest('PUT', `/api/sellers/me/orders/${o.id}/delivery-window`, { from: fromIn.value, to: toIn.value });
+        toast('Delivery dates saved.'); await load(true);
+      } catch (ex) { say(ex.message || 'Unable to save the dates.'); saveDates.disabled = false; }
+    });
+
+    // moving the order forward
+    if (o.status === 'shipped') {
+      c.append(el('p', { class: 'so-done', text: 'Shipped. Waiting for the buyer to confirm they received it.' }), msg);
+      return c;
+    }
+    const note = el('input', { type: 'text', maxlength: '200', placeholder: 'Optional note for the buyer', 'aria-label': 'Note for the buyer' });
+    const acts = el('div', { class: 'order-actions' });
+    const steps = o.status === 'confirmed' ? [['Mark preparing', 'processing', 'btn-ghost'], ['Mark shipped', 'shipped', 'btn-primary']] : [['Mark shipped', 'shipped', 'btn-primary']];
+    steps.forEach(([text, status, cls]) => {
+      const b = el('button', { type: 'button', class: `btn ${cls}`, text });
+      b.addEventListener('click', async () => {
+        if (status === 'shipped' && !confirm('Mark this order as shipped? The buyer will see it is on the way.')) return;
+        say(''); b.disabled = true;
+        try {
+          await apiRequest('POST', `/api/sellers/me/orders/${o.id}/status`, { status, note: note.value });
+          toast(status === 'shipped' ? 'Marked as shipped.' : 'Marked as preparing.'); await load(true);
+        } catch (ex) { say(ex.message || 'Unable to update this order.'); b.disabled = false; }
+      });
+      acts.append(b);
+    });
+    c.append(note, acts, msg);
+    return c;
+  }
+
+  function paint(message) {
+    host.replaceChildren();
+    host.append(el('h2', { class: 'sell-list-title', text: 'Your orders' }));
+    if (message) { host.append(el('p', { class: 'orders-note', text: message })); }
+    else if (!state.items.length) {
+      host.append(el('p', { class: 'orders-note', text: 'No paid orders yet. When a buyer pays for one of your products, it will appear here.' }));
+    } else {
+      [...state.items]
+        .sort((a, b) => (RANK[a.status] - RANK[b.status]) || (new Date(b.createdAt) - new Date(a.createdAt)))
+        .forEach(o => host.append(card(o)));
+      if (state.items.length < state.total) {
+        const more = el('button', { type: 'button', class: 'btn btn-ghost orders-more', text: 'Load more' });
+        more.addEventListener('click', () => { state.page += 1; load(false); });
+        host.append(more);
+      }
+    }
+    const n = toShip();
+    badge.textContent = n ? String(n) : '';
+    badge.hidden = !n;
+  }
+
+  async function load(reset) {
+    if (state.busy) return;
+    state.busy = true;
+    if (reset) { state.page = 1; if (!state.loaded) paint('Loading your orders…'); }
+    try {
+      const out = await apiRequest('GET', `/api/sellers/me/orders?page=${state.page}&limit=20`);
+      const rows = Array.isArray(out.orders) ? out.orders : [];
+      state.items = reset ? rows : state.items.concat(rows);
+      state.total = Number(out.total) || 0;
+      state.loaded = true;
+      paint();
+    } catch (ex) { paint(ex.message || 'We could not load your orders. Please try again.'); }
+    finally { state.busy = false; }
+  }
+
+  // Load quietly so the tab badge is right; open the Orders tab by itself if something needs shipping.
+  load(true).then(() => { if (!state.touched && toShip() > 0) showTab('orders'); });
+}
+
 async function renderSellerDashboard(root, seller) {
   root.classList.add('wide');
   root.querySelector('.sell-panel')?.remove();
   const box = el('section', { class: 'sell-panel' });
   box.innerHTML = `
     <div class="sell-head"><h2>${esc(seller.store_name)}</h2><p>${esc(seller.location)}</p></div>
+    <div class="sell-tabs" role="tablist">
+      <button type="button" class="sell-tab" data-sell-tab="orders" role="tab">Orders <span class="sell-tab-n" id="ordersBadge" hidden></span></button>
+      <button type="button" class="sell-tab on" data-sell-tab="products" role="tab">Products</button>
+    </div>
+    <section id="sellOrders" hidden></section>
+    <div id="sellProducts">
     <form class="vendor-form" id="listingForm" novalidate>
       <h2 id="lfTitle">Add a product</h2>
       <p class="form-error" id="lfError" role="alert" hidden></p>
@@ -1382,8 +1541,10 @@ async function renderSellerDashboard(root, seller) {
       <button type="button" class="btn-ghost-sm" id="lfCancel" hidden>Cancel editing</button>
     </form>
     <h2 class="sell-list-title">Your listings</h2>
-    <div id="myListings" class="sell-listings"></div>`;
+    <div id="myListings" class="sell-listings"></div>
+    </div>`;
   root.appendChild(box);
+  initSellerOrders(box);
 
   let editing = null, products = [];
   const err = $('#lfError');

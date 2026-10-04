@@ -187,3 +187,15 @@ button{padding:0}
 .order-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.order-actions .btn{min-height:42px;font-size:13px}.order-actions .btn[disabled]{opacity:.5;cursor:not-allowed}
 .orders-more{width:100%;margin-top:6px}
 @media(max-width:680px){.orders-content{padding:30px 18px 22px}.orders-content h2{font-size:26px}.track-step b{font-size:10px}}
+/* ---- seller orders ---- */
+.sell-tabs{display:flex;gap:8px;margin:0 0 18px;border-bottom:1px solid var(--line)}
+.sell-tab{display:inline-flex;align-items:center;gap:7px;padding:11px 16px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--muted);font-size:14px;font-weight:800;cursor:pointer}
+.sell-tab.on{border-bottom-color:var(--violet);color:var(--ink)}
+.sell-tab-n{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:var(--violet);color:#fff;font-size:11px;font-weight:900}
+.so-deliver{display:grid;gap:2px;margin:12px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;color:var(--text);font-size:13px;overflow-wrap:anywhere}.so-deliver strong{color:var(--ink);font-size:12px}
+.so-contact a{color:var(--violet);font-weight:800}
+.so-dates{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;margin-top:12px}.so-dates label{display:grid;gap:3px;flex:1 1 130px}.so-dates small{color:var(--muted);font-size:11px}
+.so-dates input,.so-card>input{width:100%;min-height:42px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit}
+.so-card>input{margin-top:12px}
+.so-done{margin:14px 0 0;color:var(--muted);font-size:13px;font-weight:700}
+.so-msg{margin:10px 0 0;padding:10px 12px;border-radius:10px;background:rgba(220,76,92,.12);color:var(--red);font-size:12px;font-weight:700}
