@@ -72,7 +72,7 @@ th{color:var(--muted);font-size:12px}tr:last-child td{border:0}tr.row{cursor:poi
 <div id="appView" hidden>
   <header><div class="wrap bar">
     <img src="assets/logo.svg" alt="TM Market">
-    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button></nav>
+    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders</button></nav>
     <span id="who" style="font-size:13px"></span><button class="btn" id="out">Sign out</button>
   </div></header>
   <main class="wrap" id="view"></main>
@@ -131,7 +131,7 @@ $('#out').onclick = signOut;
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { page = 1; show(b.dataset.tab); });
 function show(t) {
   tab = t; $('#view').innerHTML = ''; document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  ({ dash, users, products })[t]();
+  ({ dash, users, products, orders })[t]();
 }
 const fail = e => { $('#view').innerHTML = `<div class="card err">${esc(e.message)}<br><br><button class="btn" onclick="show(tab)">Try again</button></div>`; };
 
@@ -151,7 +151,7 @@ async function dash() {
       <div class="card"><b>${u.total}</b><span>Users (${u.today} today, ${u.last_7_days} in 7 days)</span></div>
       <div class="card"><b>${u.sellers}</b><span>Sellers (${u.suspended} suspended users)</span></div>
       <div class="card"><b>${p.total}</b><span>Products (${p.active} active, ${p.pending} pending)</span></div>
-      <div class="card"><b>${o ? o.total : 'n/a'}</b><span>${o ? 'Orders' : 'Orders not available yet'}</span></div></div>
+      <div class="card"><b>${o ? o.total : 'n/a'}</b><span>${o ? 'Orders (' + (((o.byStatus || {}).confirmed || 0) + ((o.byStatus || {}).processing || 0)) + ' paid, waiting to ship)' : 'Orders not available yet'}</span></div></div>
       <div class="charts">${bars(t.users, 'New users per day')}${bars(t.products, 'New products per day')}</div>
       <h1 style="margin-top:22px">Recently added</h1><div class="tbl"><table><tr><th>Product</th><th>Seller</th><th>Price</th><th>Status</th><th>Added</th></tr>${recent}</table></div>`;
   } catch (e) { fail(e); }
@@ -189,7 +189,7 @@ async function userSheet(id) {
   try {
     const d = await run('Loading user…', () => api('/api/admin/users/' + id));
     const u = d.user, s = d.seller, p = d.products, isAdmin = u.role === 'admin';
-    $('#sheet').innerHTML = `<h2>${esc(u.first_name + ' ' + u.last_name)}</h2><dl class="kv">
+    $('#sheet').style.maxWidth = ''; $('#sheet').innerHTML = `<h2>${esc(u.first_name + ' ' + u.last_name)}</h2><dl class="kv">
       <dt>Email</dt><dd>${esc(u.email)}</dd><dt>Phone</dt><dd>${esc(u.phone || 'Not added')}</dd><dt>Role</dt><dd>${esc(u.role)}</dd>
       <dt>Status</dt><dd>${u.is_active ? 'Active' : 'Suspended'}</dd><dt>Joined</dt><dd>${date(u.created_at)}</dd>
       ${s ? `<dt>Store</dt><dd>${esc(s.store_name)}, ${esc(s.location)}</dd><dt>Products</dt><dd>${p.active} active, ${p.pending} pending, ${p.sold} sold, ${p.removed} removed</dd>` : ''}</dl>
@@ -222,7 +222,60 @@ async function products() {
   } catch (e) { $('#list').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
 }
 
-$('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').hidden = true; };
+/* orders: tracking and delivery dates */
+const OSTAT = { pending: 'Unpaid', confirmed: 'Paid', processing: 'Preparing', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled' };
+const ONEXT = { confirmed: [['Mark preparing', 'processing', ''], ['Mark shipped', 'shipped', 'good']], processing: [['Mark shipped', 'shipped', 'good']], shipped: [['Mark delivered', 'delivered', 'good']] };
+const dayOnly = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '')); return m ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'; };
+const windowText = w => w ? (w.from === w.to ? dayOnly(w.from) : dayOnly(w.from) + ' to ' + dayOnly(w.to)) : 'Not set';
+const ostatPill = st => `<span class="pill ${st === 'delivered' ? 'ok' : st === 'cancelled' ? 'no' : st === 'pending' ? 'wait' : ''}">${esc(OSTAT[st] || st)}</span>`;
+
+async function orders() {
+  const keep = vals();
+  if (!$('#q')) $('#view').innerHTML = `<h1>Orders</h1><div class="tools"><input id="q" placeholder="Search order number, buyer or store" aria-label="Search orders"><select id="fa" aria-label="Status"><option value="">All orders</option><option value="confirmed">Paid</option><option value="processing">Preparing</option><option value="shipped">Shipped</option><option value="delivered">Delivered</option><option value="pending">Unpaid</option><option value="cancelled">Cancelled</option><option value="overdue">Overdue (past delivery dates)</option><option value="refund_check">Paid but cancelled (check refund)</option></select></div><div id="list"></div>`;
+  else { $('#q').value = keep.q; }
+  try {
+    const d = await run('Loading orders…', () => api('/api/admin/orders?' + qs({ search: $('#q').value, status: $('#fa').value, page })));
+    const rows = d.orders.map(o => `<tr class="row" data-id="${esc(o.id)}"><td>${esc(o.orderNumber)}</td><td>${esc(o.buyer.name || o.buyer.email || '-')}</td><td>${esc(o.sellerName || '-')}</td><td>${naira(o.total)}</td><td>${ostatPill(o.status)}</td><td>${o.status === 'delivered' || o.status === 'cancelled' || o.status === 'pending' ? '-' : esc(windowText(o.deliveryWindow))}</td><td>${date(o.createdAt)}</td></tr>`).join('');
+    $('#list').innerHTML = `<div class="tbl"><table><tr><th>Order</th><th>Buyer</th><th>Seller</th><th>Total</th><th>Status</th><th>Delivery dates</th><th>Placed</th></tr>${rows || '<tr><td colspan="7" class="empty">No orders match.</td></tr>'}</table></div>${pager(d)}`;
+    wire(orders);
+    document.querySelectorAll('tr.row').forEach(r => r.onclick = () => orderSheet(r.dataset.id));
+  } catch (e) { $('#list').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+}
+
+async function orderSheet(id) {
+  try {
+    const d = await run('Loading order…', () => api('/api/admin/orders/' + id));
+    const o = d.order, moves = ONEXT[o.status] || [], canDates = ['confirmed', 'processing', 'shipped'].includes(o.status);
+    const items = o.items.map(i => `<li>${i.quantity} × ${esc(i.name)} <b>${naira(i.totalPrice)}</b></li>`).join('');
+    const hist = o.events.length ? o.events.map(e => `<li>${date(e.at)}: ${esc(OSTAT[e.status] || e.status)}${e.note ? ' (' + esc(e.note) + ')' : ''}</li>`).join('') : '<li>No steps recorded yet.</li>';
+    const warn = o.status === 'cancelled' && o.payment.status === 'successful' ? '<p class="msg">Money was received for this cancelled order. Refund it manually in the Paystack dashboard.</p>' : '';
+    $('#sheet').style.maxWidth = '560px';
+    $('#sheet').innerHTML = `<h2>${esc(o.orderNumber)}</h2><p>${ostatPill(o.status)}</p>${warn}<dl class="kv">
+      <dt>Buyer</dt><dd>${esc(o.buyer.name || '-')}<br>${esc(o.buyer.email || '')}<br>${esc(o.buyer.phone || '')}</dd>
+      <dt>Deliver to</dt><dd>${esc(o.shipping.name)}, ${esc(o.shipping.phone)}<br>${esc(o.shipping.address)}, ${esc(o.shipping.city)}${o.shipping.state ? ', ' + esc(o.shipping.state) : ''}</dd>
+      <dt>Seller</dt><dd>${esc(o.seller.storeName || '-')}${o.seller.email ? '<br>' + esc(o.seller.email) : ''}</dd>
+      <dt>Items</dt><dd><ul style="margin:0;padding-left:18px">${items}</ul><b>Total ${naira(o.total)}</b></dd>
+      <dt>Payment</dt><dd>${esc(o.payment.status || 'none')}${o.payment.reference ? '<br>Ref: ' + esc(o.payment.reference) : ''}${o.payment.paidAt ? '<br>Paid ' + date(o.payment.paidAt) : ''}</dd>
+      <dt>Dates</dt><dd>${esc(windowText(o.deliveryWindow))}</dd>
+      <dt>History</dt><dd><ul style="margin:0;padding-left:18px">${hist}</ul></dd></dl>
+      ${canDates ? `<div class="tools"><input id="wf" type="date" aria-label="From date" value="${esc(o.deliveryWindow ? o.deliveryWindow.from : '')}"><input id="wt" type="date" aria-label="To date" value="${esc(o.deliveryWindow ? o.deliveryWindow.to : '')}"><button class="btn" id="wsave">Save dates</button></div>` : ''}
+      ${moves.length ? `<div class="tools"><input id="onote" maxlength="200" placeholder="Optional note for the buyer" aria-label="Note"></div>` : ''}
+      <div class="acts">${moves.map(m => `<button class="btn ${m[2]}" data-st="${m[1]}">${m[0]}</button>`).join('')}<button class="btn" id="cls">Close</button></div>
+      <p class="msg" id="smsg"></p>`;
+    $('#modal').hidden = false; $('#cls').onclick = () => { $('#modal').hidden = true; $('#sheet').style.maxWidth = ''; };
+    if ($('#wsave')) $('#wsave').onclick = async () => {
+      try { await run('Saving…', () => api(`/api/admin/orders/${o.id}/delivery-window`, { method: 'PUT', body: JSON.stringify({ from: $('#wf').value, to: $('#wt').value }) })); orderSheet(o.id); orders(); }
+      catch (e) { $('#smsg').textContent = e.message; }
+    };
+    document.querySelectorAll('.acts .btn[data-st]').forEach(b => b.onclick = async () => {
+      if (b.dataset.st === 'delivered' && !confirm('Mark this order as delivered? Only do this when you are sure the buyer has received it.')) return;
+      try { await run('Saving…', () => api(`/api/admin/orders/${o.id}/status`, { method: 'POST', body: JSON.stringify({ status: b.dataset.st, note: $('#onote') ? $('#onote').value : '' }) })); orderSheet(o.id); orders(); }
+      catch (e) { $('#smsg').textContent = e.message; }
+    });
+  } catch (e) { alert(e.message); }
+}
+
+$('#modal').onclick = e => { if (e.target.id === 'modal') { $('#modal').hidden = true; $('#sheet').style.maxWidth = ''; } };
 (async () => {
   try { if (token) await enter(); else $('#loginView').hidden = false; }
   catch (e) { signOut(); }

@@ -21,4 +21,9 @@ router.get('/products', c.products);
 router.get('/products/:id', c.productDetail);
 router.patch('/products/:id/status', c.changeProductStatus);
 
+router.get('/orders', c.orders);
+router.get('/orders/:id', c.orderDetail);
+router.post('/orders/:id/status', c.changeOrderStatus);
+router.put('/orders/:id/delivery-window', c.changeOrderWindow);
+
 module.exports = router;

@@ -692,7 +692,7 @@ function initStorefront() {
         box.append(el('small', { text: 'This is taking longer than expected. Please contact support: tmmarketsupport@gmail.com' }));
       }
       const note = [...(o.events || [])].reverse().find(e => e.note && !AUTO_NOTE.test(e.note));
-      if (note) box.append(el('small', { text: `Seller note: ${note.note}` }));
+      if (note) box.append(el('small', { text: `Note: ${note.note}` }));
       card.append(box);
     }
 

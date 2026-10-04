@@ -204,7 +204,125 @@ async function setProductStatus(id, status) {
   return r.rows[0] || null;
 }
 
+// ---- orders (tracking) ----
+
+const ORDER_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+
+const ORDER_FROM = `
+  FROM orders o
+  LEFT JOIN users bu ON bu.id = o.user_id
+  LEFT JOIN seller_profiles sp ON sp.user_id = o.seller_id
+  LEFT JOIN payments pay ON pay.order_id = o.id`;
+
+// Two special filters on top of the real statuses:
+//   overdue      = paid, not delivered, and the delivery window has already ended (Nigeria date)
+//   refund_check = money was received but the order is cancelled (needs a manual refund in Paystack)
+const OVERDUE = `o.status IN ('confirmed', 'processing', 'shipped')
+  AND o.delivery_window_end IS NOT NULL
+  AND o.delivery_window_end < (NOW() AT TIME ZONE '${TZ}')::date`;
+const REFUND_CHECK = `o.status = 'cancelled' AND pay.status = 'successful'`;
+
+async function listOrders({ search, status, limit, offset }) {
+  const where = [];
+  const params = [];
+
+  if (status === 'overdue') where.push(`(${OVERDUE})`);
+  else if (status === 'refund_check') where.push(`(${REFUND_CHECK})`);
+  else if (status) { params.push(status); where.push(`o.status = $${params.length}`); }
+
+  if (search) {
+    params.push(like(search));
+    const n = params.length;
+    where.push(`(o.order_number ILIKE $${n} OR bu.email ILIKE $${n}
+                 OR (bu.first_name || ' ' || bu.last_name) ILIKE $${n}
+                 OR sp.store_name ILIKE $${n})`);
+  }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const total = (await pool.query(`SELECT COUNT(*)::int AS n ${ORDER_FROM} ${clause}`, params)).rows[0].n;
+
+  params.push(limit, offset);
+  const rows = (await pool.query(
+    `SELECT o.id, o.order_number, o.status, o.total, o.created_at,
+            to_char(o.delivery_window_start, 'YYYY-MM-DD') AS delivery_window_start,
+            to_char(o.delivery_window_end, 'YYYY-MM-DD') AS delivery_window_end,
+            bu.first_name AS buyer_first_name, bu.last_name AS buyer_last_name, bu.email AS buyer_email,
+            sp.store_name AS seller_name, pay.status AS payment_status
+     ${ORDER_FROM} ${clause}
+     ORDER BY o.created_at DESC, o.id DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  )).rows;
+
+  return { orders: rows, total };
+}
+
+async function getOrderDetail(id) {
+  const r = await pool.query(
+    `SELECT o.id, o.order_number, o.status, o.subtotal, o.shipping_fee, o.discount, o.total,
+            o.shipping_name, o.shipping_phone, o.shipping_address, o.shipping_city, o.shipping_state, o.shipping_country,
+            o.created_at, o.shipped_at, o.delivered_at,
+            to_char(o.delivery_window_start, 'YYYY-MM-DD') AS delivery_window_start,
+            to_char(o.delivery_window_end, 'YYYY-MM-DD') AS delivery_window_end,
+            bu.first_name AS buyer_first_name, bu.last_name AS buyer_last_name, bu.email AS buyer_email, bu.phone AS buyer_phone,
+            o.seller_id, sp.store_name AS seller_name, su.email AS seller_email,
+            pay.status AS payment_status, pay.transaction_reference AS payment_reference, pay.paid_at,
+            COALESCE((SELECT json_agg(json_build_object('name', oi.product_name, 'quantity', oi.quantity,
+                        'unit_price', oi.unit_price, 'total_price', oi.total_price) ORDER BY oi.id)
+                      FROM order_items oi WHERE oi.order_id = o.id), '[]'::json) AS items,
+            COALESCE((SELECT json_agg(json_build_object('status', oe.status, 'note', oe.note, 'at', oe.created_at)
+                        ORDER BY oe.created_at, oe.id)
+                      FROM order_events oe WHERE oe.order_id = o.id), '[]'::json) AS events
+     ${ORDER_FROM}
+     LEFT JOIN users su ON su.id = o.seller_id
+     WHERE o.id = $1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+
+// Moves an order forward only from the allowed current statuses, and records the step.
+async function adminAdvanceOrder(id, newStatus, fromStatuses, note) {
+  const r = await pool.query(
+    `WITH upd AS (
+       UPDATE orders
+          SET status = $2::text,
+              shipped_at = CASE WHEN $2::text = 'shipped' THEN NOW() ELSE shipped_at END,
+              delivered_at = CASE WHEN $2::text = 'delivered' THEN NOW() ELSE delivered_at END,
+              updated_at = NOW()
+        WHERE id = $1 AND status = ANY($3::text[])
+        RETURNING id
+     )
+     INSERT INTO order_events (order_id, status, note)
+     SELECT id, $2::text, $4::text FROM upd
+     RETURNING order_id`,
+    [id, newStatus, fromStatuses, note || null]
+  );
+  return r.rowCount > 0;
+}
+
+async function adminSetDeliveryWindow(id, from, to) {
+  const r = await pool.query(
+    `WITH upd AS (
+       UPDATE orders
+          SET delivery_window_start = $2::date, delivery_window_end = $3::date, updated_at = NOW()
+        WHERE id = $1 AND status IN ('confirmed', 'processing', 'shipped')
+        RETURNING id, status
+     )
+     INSERT INTO order_events (order_id, status, note)
+     SELECT id, status, $4::text FROM upd
+     RETURNING order_id`,
+    [id, from, to, `Delivery expected between ${from} and ${to}`]
+  );
+  return r.rowCount > 0;
+}
+
 module.exports = {
+  ORDER_STATUSES,
+  listOrders,
+  getOrderDetail,
+  adminAdvanceOrder,
+  adminSetDeliveryWindow,
   getStats,
   getDailyCounts,
   listUsers,
