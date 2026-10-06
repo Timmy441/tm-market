@@ -51,7 +51,7 @@ async function updateSeller(userId, { storeName, description, location, whatsapp
 
 // Role is read from the database (not the token) so a suspended or demoted user loses access immediately.
 async function getAuthState(userId) {
-  const r = await pool.query(`SELECT id, role, is_active FROM users WHERE id = $1`, [userId]);
+  const r = await pool.query(`SELECT id, role, is_active, password_changed_at FROM users WHERE id = $1`, [userId]);
   return r.rows[0] || null;
 }
 

@@ -40,6 +40,11 @@ async function authenticateToken(req, res, next) {
       return res.status(403).json({ success: false, message: 'This account is inactive' });
     }
 
+    // A password change/reset signs out every older session.
+    if (state.password_changed_at && decoded.iat < Math.floor(new Date(state.password_changed_at).getTime() / 1000)) {
+      return res.status(401).json({ success: false, message: 'Your password was changed. Please log in again.' });
+    }
+
     req.user = { id: decoded.userId, role: state.role };
     return next();
   } catch (error) {
