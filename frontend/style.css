@@ -243,3 +243,6 @@ button{padding:0}
   .tmc{right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
   .tmc-panel{width:calc(100vw - 24px);height:min(78dvh,560px)}
 }
+
+/* Category photos: real pictures, shown at full strength (the dark gradient at the bottom keeps the text readable) */
+.category-card img.cat-photo{opacity:1;background:var(--line)}
