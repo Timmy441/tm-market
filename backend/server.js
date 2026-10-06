@@ -12,6 +12,7 @@ const sellerRoutes = require('./src/routes/sellerRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const orderRoutes = require('./src/routes/orderRoutes');
 const paymentRoutes = require('./src/routes/paymentRoutes');
+const chatRoutes = require('./src/routes/chatRoutes');
 const { paystackWebhook } = require('./src/controllers/paymentController');
 const { getCategories } = require('./src/controllers/productController');
 
@@ -71,6 +72,14 @@ const orderLimiter = rateLimit({
   message: { success: false, message: 'Too many requests. Please slow down.' }
 });
 
+const chatLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'You are sending messages too quickly. Please wait a few minutes.' }
+});
+
 app.get('/api/health', (req, res) => res.json({ success: true }));
 
 // Same public paths as before: POST /api/register, POST /api/login (plus GET /api/me)
@@ -86,6 +95,7 @@ app.use('/api/sellers', sellerRoutes);
 app.use('/api/admin', adminLimiter, adminRoutes);
 app.use('/api/orders', orderLimiter, orderRoutes);
 app.use('/api/payments', orderLimiter, paymentRoutes);
+app.use('/api/chat', chatLimiter, chatRoutes);
 
 app.use((req, res) => res.status(404).json({ success: false, message: 'Not found' }));
 

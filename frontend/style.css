@@ -205,3 +205,41 @@ button{padding:0}
 .profile-sep h4{margin:0 0 12px;color:var(--ink);font-size:17px}
 
 .auth-aux{margin:14px 0 0;text-align:center}
+
+/* ==========================================================================
+   TM Assistant (support chatbot). Uses the existing colour variables, so dark mode just works.
+   ========================================================================== */
+.tmc{position:fixed;z-index:900;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));font-family:inherit}
+.tmc-launch{display:grid;place-items:center;width:56px;height:56px;border:0;border-radius:50%;background:linear-gradient(135deg,var(--violet),var(--violet-2));color:#fff;box-shadow:0 10px 30px rgba(124,58,237,.38);cursor:pointer;transition:transform var(--ease),box-shadow var(--ease)}
+.tmc-launch:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(124,58,237,.46)}
+.tmc.open .tmc-launch{display:none}
+.tmc-panel{position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:min(380px,calc(100vw - 32px));height:min(560px,calc(100dvh - 40px));border:1px solid var(--line);border-radius:20px;background:var(--card);color:var(--text);box-shadow:0 24px 80px rgba(14,12,24,.28);overflow:hidden;animation:tmPop 220ms var(--ease)}
+.tmc-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;background:linear-gradient(135deg,var(--violet),var(--violet-2));color:#fff}
+.tmc-head strong{display:block;font-size:15px;line-height:1.2}
+.tmc-head small{display:block;margin-top:2px;font-size:11.5px;opacity:.88}
+.tmc-x{width:34px;height:34px;border:0;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;font-size:22px;line-height:1;cursor:pointer}
+.tmc-x:hover{background:rgba(255,255,255,.3)}
+.tmc-log{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding:14px;overflow-y:auto;overscroll-behavior:contain;background:var(--cream)}
+.tmc-msg{max-width:88%;padding:9px 13px;border-radius:16px;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.tmc-bot{align-self:flex-start;border-bottom-left-radius:5px;background:var(--card);border:1px solid var(--line);color:var(--text)}
+.tmc-me{align-self:flex-end;border-bottom-right-radius:5px;background:var(--violet);color:#fff}
+.tmc-typing{color:var(--muted);font-style:italic}
+.tmc-card{display:flex;flex-direction:column;gap:6px;white-space:normal}
+.tmc-card strong{color:var(--ink);font-size:13.5px}
+.tmc-link{display:block;padding:8px 10px;border:1px solid var(--line);border-radius:10px;color:var(--violet);font-size:12.5px;font-weight:700;text-decoration:none;overflow-wrap:anywhere}
+.tmc-link:hover{background:var(--line)}
+.tmc-quick{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px;background:var(--cream)}
+.tmc-quick:not(:empty){padding-top:4px;padding-bottom:8px}
+.tmc-chip{padding:7px 12px;border:1px solid var(--violet);border-radius:99px;background:transparent;color:var(--violet);font-size:12.5px;font-weight:700;cursor:pointer}
+.tmc-chip:hover{background:var(--violet);color:#fff}
+.tmc-form{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:var(--card)}
+.tmc-form input{flex:1;min-width:0;min-height:42px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--cream);color:var(--ink);font:inherit;font-size:16px}
+.tmc-form input:focus{outline:2px solid var(--violet);outline-offset:0}
+.tmc-send{width:44px;min-height:42px;border:0;border-radius:12px;background:var(--violet);color:#fff;font-size:16px;cursor:pointer}
+.tmc-send:disabled{opacity:.5;cursor:not-allowed}
+.tmc-support-btn{padding:10px;border:0;border-top:1px solid var(--line);background:var(--card);color:var(--violet);font-size:13px;font-weight:800;cursor:pointer}
+.tmc-support-btn:hover{background:var(--line)}
+@media(max-width:480px){
+  .tmc{right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+  .tmc-panel{width:calc(100vw - 24px);height:min(78dvh,560px)}
+}

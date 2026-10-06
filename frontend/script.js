@@ -580,7 +580,7 @@ function initLandingGate() {
   }, true);
 
   document.addEventListener('submit', e => {
-    if (e.target.closest('#authModal')) return;
+    if (e.target.closest('#authModal, [data-public]')) return;   // data-public: the chat form is allowed for everyone
     e.preventDefault(); e.stopPropagation();
     if (Auth.isLoggedIn()) return go(HOME);
     pending = { href: HOME };
@@ -1797,6 +1797,7 @@ document.addEventListener("DOMContentLoaded", () => {
   Loader.ensure();
   updateAuthUI();
   updateBagCount();
+  initChatWidget();
 
   // Header/account clicks (work on every page)
   document.addEventListener('click', e => {
@@ -1849,3 +1850,147 @@ document.addEventListener("DOMContentLoaded", () => {
     updateAuthUI();
   });
 });
+
+/* ==========================================================================
+   TM Assistant (support chatbot)
+   --------------------------------------------------------------------------
+   Questions go to POST /api/chat on the backend, which answers from a written
+   FAQ and, for a logged-in user, reads that user's own real order status.
+   The support channels come from the backend (GET /api/chat/start).
+   The chat history lives in memory only and disappears when the page reloads.
+   ========================================================================== */
+const CHAT_TIMEOUT = 15000;   // ms; the chat can never hang forever
+// Used ONLY if the backend cannot be reached for the greeting. Same channels as the backend list.
+const CHAT_FALLBACK_SUPPORT = {
+  emails: ['tmmarketsupport@gmail.com', 'support@gmail.com'],
+  whatsapp: { display: '+234 708 604 9886', link: 'https://wa.me/2347086049886' }
+};
+
+function initChatWidget() {
+  if ($('#tmChat')) return;
+
+  const root = el('div', { id: 'tmChat', class: 'tmc', 'data-public': '' });   // data-public: the landing-page login gate must ignore clicks here
+  root.innerHTML = `
+    <button type="button" class="tmc-launch" id="tmChatBtn" aria-label="Open TM Assistant chat" aria-expanded="false" aria-controls="tmChatPanel">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.6-.8L3 21l1.9-5.1A8.4 8.4 0 1 1 21 11.5z"/></svg>
+    </button>
+    <section class="tmc-panel" id="tmChatPanel" role="dialog" aria-label="TM Assistant chat" hidden>
+      <header class="tmc-head">
+        <div><strong>TM Assistant</strong><small>Automated assistant, not a human</small></div>
+        <button type="button" class="tmc-x" id="tmChatClose" aria-label="Close chat">&times;</button>
+      </header>
+      <div class="tmc-log" id="tmChatLog" role="log" aria-live="polite"></div>
+      <div class="tmc-quick" id="tmChatQuick"></div>
+      <form class="tmc-form" id="tmChatForm" autocomplete="off">
+        <input type="text" id="tmChatInput" maxlength="500" placeholder="Type your question…" aria-label="Type your question">
+        <button type="submit" class="tmc-send" id="tmChatSend" aria-label="Send">&#10148;</button>
+      </form>
+      <button type="button" class="tmc-support-btn" id="tmChatSupportBtn">Contact Support</button>
+    </section>`;
+  document.body.appendChild(root);
+
+  const panel = $('#tmChatPanel'), btn = $('#tmChatBtn'), log = $('#tmChatLog');
+  const quick = $('#tmChatQuick'), input = $('#tmChatInput'), form = $('#tmChatForm'), send = $('#tmChatSend');
+  let started = false, busy = false, support = CHAT_FALLBACK_SUPPORT;
+
+  const scrollDown = () => { log.scrollTop = log.scrollHeight; };
+
+  function addMsg(who, text) {
+    const m = el('div', { class: `tmc-msg tmc-${who}` });
+    m.textContent = text;           // plain text only, so nothing from the server can inject HTML
+    log.append(m);
+    scrollDown();
+    return m;
+  }
+
+  function addSupportCard(s) {
+    const box = el('div', { class: 'tmc-msg tmc-bot tmc-card' }, el('strong', { text: 'Contact the TM Market team' }));
+    (s.emails || []).forEach(addr => box.append(el('a', { class: 'tmc-link', href: `mailto:${addr}`, text: `Email ${addr}` })));
+    if (s.whatsapp && /^https:\/\/wa\.me\/\d+$/.test(s.whatsapp.link || '')) {
+      box.append(el('a', { class: 'tmc-link', href: s.whatsapp.link, target: '_blank', rel: 'noopener', text: `WhatsApp ${s.whatsapp.display}` }));
+    }
+    log.append(box);
+    scrollDown();
+  }
+
+  function setQuick(list) {
+    quick.replaceChildren();
+    (list || []).slice(0, 4).forEach(q => {
+      const b = el('button', { type: 'button', class: 'tmc-chip', text: q });
+      b.addEventListener('click', () => ask(q));
+      quick.append(b);
+    });
+  }
+
+  async function begin() {
+    if (started) return;
+    started = true;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT);
+      const res = await fetch(`${API_URL}/api/chat/start`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error('start failed');
+      if (data.support) support = data.support;
+      addMsg('bot', data.greeting);
+      setQuick(data.suggestions);
+    } catch {
+      addMsg('bot', 'Hi! I am TM Assistant, an automated helper. I could not reach the server just now, but you can still type a question and I will try again.');
+      setQuick(['How do I buy?', 'Track my order']);
+    }
+  }
+
+  async function ask(text) {
+    text = String(text || '').trim();
+    if (!text || busy) return;
+    busy = true; send.disabled = true;
+    addMsg('me', text);
+    input.value = '';
+    setQuick([]);
+    const typing = addMsg('bot', 'Typing…');
+    typing.classList.add('tmc-typing');
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT);
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      const token = Auth.isLoggedIn() ? Auth.token() : null;
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${API_URL}/api/chat`, { method: 'POST', headers, body: JSON.stringify({ message: text }), signal: ctrl.signal });
+      let data = {};
+      try { data = await res.json(); } catch { /* not JSON */ }
+      typing.remove();
+      if (!res.ok || !data.success) {
+        addMsg('bot', res.status < 500 && data.message ? data.message : 'Sorry, something went wrong. Please try again in a moment.');
+      } else {
+        addMsg('bot', data.reply);
+        if (data.support) addSupportCard(data.support);
+        setQuick(data.suggestions);
+      }
+    } catch (err) {
+      typing.remove();
+      addMsg('bot', err && err.name === 'AbortError'
+        ? 'That is taking too long. Please try again in a moment.'
+        : 'I could not reach TM Market. Please check your connection and try again.');
+    } finally {
+      clearTimeout(timer);
+      busy = false; send.disabled = false;
+      if (!panel.hidden) input.focus();
+    }
+  }
+
+  function setOpen(open) {
+    panel.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-label', open ? 'Close TM Assistant chat' : 'Open TM Assistant chat');
+    root.classList.toggle('open', open);
+    if (open) { begin(); setTimeout(() => input.focus(), 50); } else btn.focus();
+  }
+
+  btn.addEventListener('click', () => setOpen(panel.hidden));
+  $('#tmChatClose').addEventListener('click', () => setOpen(false));
+  $('#tmChatSupportBtn').addEventListener('click', () => addSupportCard(support));
+  form.addEventListener('submit', e => { e.preventDefault(); ask(input.value); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.hidden) setOpen(false); });
+}
