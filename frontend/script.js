@@ -1738,7 +1738,7 @@ async function renderSellerDashboard(root, seller) {
     const btn = $('#lfSubmit'); btn.disabled = true;
     try {
       await Loader.run(async () => {
-        if (files.length) body.images = (await Promise.all(files.map(uploadImage))).map(imageUrl => ({ imageUrl }));
+        if (files.length) body.images = (await Promise.all(files.map(f => uploadImage(f)))).map(imageUrl => ({ imageUrl }));
         if (editing) await apiRequest('PUT', `/api/sellers/me/products/${editing.id}`, body);
         else await apiRequest('POST', '/api/sellers/me/products', body);
       }, { text: files.length ? 'Uploading photos…' : 'Saving…' });
