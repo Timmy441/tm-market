@@ -21,6 +21,26 @@ function paymentsDisabledResponse(res) {
   return res.status(503).json({ success: false, message: 'Live payments are blocked until enabled by admin.' });
 }
 
+function siteOrigin() {
+  const raw = process.env.SITE_URL || 'https://tm-market-pi.vercel.app';
+  try { return new URL(raw).origin; } catch (e) { return 'https://tm-market-pi.vercel.app'; }
+}
+
+// Only allow Paystack to send the buyer back to our own site.
+// Anything else (another domain, odd scheme, too long) is replaced with a safe default.
+function safeCallbackUrl(candidate, orderId) {
+  const origin = siteOrigin();
+  const fallback = `${origin}/homepage.html?payreturn=1&orderId=${encodeURIComponent(orderId)}`;
+  if (typeof candidate !== 'string' || !candidate || candidate.length > 500) return fallback;
+  try {
+    const u = new URL(candidate);
+    if (u.origin !== origin || u.username || u.password) return fallback;
+    return u.toString();
+  } catch (e) {
+    return fallback;
+  }
+}
+
 function makeReference(orderId) {
   const salt = crypto.randomBytes(4).toString('hex').toUpperCase();
   return `TM-${orderId}-${Date.now()}-${salt}`;
@@ -85,9 +105,7 @@ async function initializePaystackPayment(req, res) {
       }
     };
 
-    if (/^https?:\/\//i.test(callbackUrl) && callbackUrl.length <= 500) {
-      payload.callback_url = callbackUrl;
-    }
+    payload.callback_url = safeCallbackUrl(callbackUrl, order.id);
 
     const tx = await initializeTransaction(payload);
     const saved = await savePendingPayment(order.id, reference, total);

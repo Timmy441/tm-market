@@ -27,7 +27,7 @@ mock('../src/models/paymentModel', {
 
 mock('../src/utils/paystack', {
   paymentsStatus: () => state.paymentMode,
-  initializeTransaction: async () => state.initTx,
+  initializeTransaction: async (payload) => { state.lastPayload = payload; return state.initTx; },
   verifyTransaction: async () => state.verifyTx,
   verifySignature: () => state.webhookVerified
 });
@@ -62,6 +62,20 @@ test('initialize payment returns Paystack authorization fields', async () => {
   assert.strictEqual(r.body.payment.orderId, 7);
   assert.ok(r.body.payment.reference.startsWith('TM-7-'));
   assert.strictEqual(r.body.payment.authorizationUrl, 'https://paystack.test/auth');
+});
+
+test('initialize payment only allows callback URLs on our own site', async () => {
+  delete process.env.SITE_URL;
+  const good = 'https://tm-market-pi.vercel.app/homepage.html?payreturn=1&orderId=7';
+  await call(c.initializePaystackPayment, { user: { id: 1 }, body: { orderId: 7, callbackUrl: good } });
+  assert.strictEqual(state.lastPayload.callback_url, good);
+  const bad = ['https://evil.example.com/steal', 'http://tm-market-pi.vercel.app.evil.com/x', 'https://tm-market-pi.vercel.app@evil.com/x', 'javascript:alert(1)', 'not a url'];
+  for (const b of bad) {
+    await call(c.initializePaystackPayment, { user: { id: 1 }, body: { orderId: 7, callbackUrl: b } });
+    assert.strictEqual(state.lastPayload.callback_url, 'https://tm-market-pi.vercel.app/homepage.html?payreturn=1&orderId=7', b);
+  }
+  await call(c.initializePaystackPayment, { user: { id: 1 }, body: { orderId: 7 } });
+  assert.match(state.lastPayload.callback_url, /^https:\/\/tm-market-pi\.vercel\.app\//);
 });
 
 test('verify payment maps paid outcome to success response', async () => {
