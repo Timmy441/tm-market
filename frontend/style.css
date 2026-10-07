@@ -270,3 +270,5 @@ button{padding:0}
 .cond-new{background:#dcfce7;color:#14532d}
 .cond-used{background:#fef3c7;color:#78350f}
 .cond-repaired{background:#dbeafe;color:#1e3a8a}
+/* footer credit */
+.footer-credit{margin-top:14px;text-align:center;font-size:13px;opacity:.75}
