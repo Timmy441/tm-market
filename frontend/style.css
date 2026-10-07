@@ -265,3 +265,8 @@ button{padding:0}
 .grid-status{margin:12px 0}
 .no-results{padding:40px 0}
 @media(max-width:680px){.hero-grid{padding:36px 0}.section{padding:36px 0}.section-top{margin-bottom:20px}.shop-section{padding-bottom:32px}.footer{padding:36px 0 16px}}
+/* item condition chip */
+.cond{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.02em;line-height:1.5;background:#e8eaf0;color:#2b2f3a}
+.cond-new{background:#dcfce7;color:#14532d}
+.cond-used{background:#fef3c7;color:#78350f}
+.cond-repaired{background:#dbeafe;color:#1e3a8a}

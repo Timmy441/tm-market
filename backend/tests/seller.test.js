@@ -39,7 +39,7 @@ const call = (handler, req) => new Promise(resolve => {
   handler({ params: {}, body: {}, ...req }, res);
 });
 const img = `https://res.cloudinary.com/democloud/image/upload/v1/tm-market/products/a.jpg`;
-const good = { name: 'Blue Sneakers', price: '15000', categoryId: 2, location: 'Minna', quantity: 3, description: 'Nice', images: [{ imageUrl: img }] };
+const good = { name: 'Blue Sneakers', price: '15000', categoryId: 2, itemCondition: 'new', location: 'Minna', quantity: 3, description: 'Nice', images: [{ imageUrl: img }] };
 
 test('seller can create a listing; it is ACTIVE by default', async () => {
   const r = await call(c.createMyProduct, { user: { id: 1 }, body: good });
@@ -55,11 +55,24 @@ test('NEW_LISTING_STATUS=pending switches on approval with no code change', asyn
 
 test('validation rejects bad listings, including images from other hosts', async () => {
   for (const bad of [{ ...good, name: '' }, { ...good, price: 0 }, { ...good, price: 'abc' }, { ...good, categoryId: null },
+    { ...good, itemCondition: undefined }, { ...good, itemCondition: 'broken' }, { ...good, itemCondition: 5 },
     { ...good, quantity: -1 }, { ...good, quantity: 1.5 }, { ...good, location: '' }, { ...good, images: [] },
     { ...good, images: [{ imageUrl: 'https://evil.example/x.jpg' }] }, { ...good, images: Array(6).fill({ imageUrl: img }) }]) {
     const r = await call(c.createMyProduct, { user: { id: 1 }, body: bad });
     assert.strictEqual(r.code, 400, JSON.stringify(bad).slice(0, 80));
   }
+});
+
+test('condition is saved (case-insensitive) and can be changed on update; a bad value is refused', async () => {
+  let r = await call(c.createMyProduct, { user: { id: 1 }, body: { ...good, itemCondition: ' Repaired ' } });
+  assert.strictEqual(r.code, 201); assert.strictEqual(r.body.product.itemCondition, 'repaired');
+  const id = String(r.body.product.id);
+  r = await call(c.updateMyProduct, { user: { id: 1 }, params: { id }, body: { itemCondition: 'used' } });
+  assert.strictEqual(r.code, 200); assert.strictEqual(r.body.product.itemCondition, 'used');
+  r = await call(c.updateMyProduct, { user: { id: 1 }, params: { id }, body: { itemCondition: 'mint' } });
+  assert.strictEqual(r.code, 400);
+  r = await call(c.updateMyProduct, { user: { id: 1 }, params: { id }, body: { price: 123 } });   // other edits do not need it
+  assert.strictEqual(r.code, 200);
 });
 
 test("a seller cannot edit or delete another seller's product (404, unchanged)", async () => {

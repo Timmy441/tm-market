@@ -172,6 +172,13 @@ function validateListing(body, isUpdate) {
     v ? (data.location = v) : errors.push('Location is required');
   }
 
+  if (!isUpdate || b.itemCondition !== undefined) {
+    const v = typeof b.itemCondition === 'string' ? b.itemCondition.trim().toLowerCase() : '';
+    ['new', 'used', 'repaired'].includes(v)
+      ? (data.itemCondition = v)
+      : errors.push('Please choose the item condition (new, used or repaired)');
+  }
+
   if (!isUpdate || b.quantity !== undefined) {
     const n = Number(b.quantity);
     Number.isInteger(n) && n >= 0 && n <= MAX_QUANTITY

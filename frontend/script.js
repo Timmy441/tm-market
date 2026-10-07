@@ -25,6 +25,8 @@ const LOADER_FAILSAFE = 20000;                   // ms; loader can never stay up
 const products = [];
 const PLACEHOLDER_IMG = 'assets/logo.svg';
 
+const CONDITION_LABELS = { new: 'New', used: 'Used', repaired: 'Repaired' };
+
 function mapProduct(r) {
   const qty = r.quantity === null || r.quantity === undefined ? null : Number(r.quantity);
   const available = r.available !== false && (r.status || 'active') === 'active' && (qty === null || qty > 0);
@@ -39,7 +41,8 @@ function mapProduct(r) {
     price, oldPrice: cmp && cmp > price ? cmp : null,
     image: r.image_url || images[0] || PLACEHOLDER_IMG, images,
     description: r.description || '', seller: r.seller_name || '', location: r.location || r.seller_location || '',
-    available, stock, badge: available ? '' : stock, quantity: qty
+    available, stock, badge: available ? '' : stock, quantity: qty,
+    condition: CONDITION_LABELS[r.item_condition] ? r.item_condition : ''
   };
 }
 
@@ -956,6 +959,7 @@ function initStorefront() {
         ? `<button class="add-btn" data-add="${esc(p.id)}" type="button" aria-label="Add ${esc(p.name)} to cart">+</button>`
         : "";
       const meta = [p.seller ? `By ${esc(p.seller)}` : "", p.location ? `📍 ${esc(p.location)}` : ""].filter(Boolean).join(" · ");
+      const cond = p.condition ? `<span class="cond cond-${esc(p.condition)}">${esc(CONDITION_LABELS[p.condition])}</span>` : "";
 
       card.innerHTML = `<div class="product-media">
         ${p.badge ? `<span class="badge sale">${esc(p.badge)}</span>` : ""}
@@ -966,7 +970,7 @@ function initStorefront() {
       <div class="product-info">
         <div class="product-meta"><span class="product-category">${esc(p.category)}</span><span class="stock">${esc(p.stock)}</span></div>
         <h3><a href="#" data-quick="${esc(p.id)}">${esc(p.name)}</a></h3>
-        ${meta ? `<p class="seller-line">${meta}</p>` : ""}
+        ${(cond || meta) ? `<p class="seller-line">${cond}${cond && meta ? " " : ""}${meta}</p>` : ""}
         <div class="price-row"><div class="price">${money(p.price)} ${p.oldPrice ? `<span class="old-price">${money(p.oldPrice)}</span>` : ""}</div>${actionButton}</div>
       </div>`;
       grid.appendChild(card);
@@ -1260,6 +1264,7 @@ function initShopPage() {
     const c = el('div', { class: 'product-card' });
     if (p.badge) c.append(el('span', { class: 'badge', text: p.badge }));
     c.append(img, title);
+    if (p.condition) c.append(el('p', { class: 'seller-line' }, el('span', { class: 'cond cond-' + p.condition, text: CONDITION_LABELS[p.condition] })));
     if (p.seller) c.append(el('p', { class: 'seller-info' }, document.createTextNode('Sold by: '), el('strong', { text: p.seller })));
     if (p.location) c.append(el('p', { class: 'seller-line', text: '📍 ' + p.location }));
     c.append(el('p', { class: 'price', text: money(p.price) }));
@@ -1427,7 +1432,7 @@ async function showProductDetails(id, { onAdd } = {}) {
       ${imgs.length > 1 ? `<div class="detail-thumbs">${imgs.map((u, i) => `<img src="${esc(u)}" alt="" data-thumb="${i}" class="${i === 0 ? 'active' : ''}">`).join('')}</div>` : ''}</div>
     <div class="modal-info"><span class="eyebrow">${esc(p.category)}</span><h2>${esc(p.name)}</h2>
       <div class="price detail-price">${money(p.price)} ${p.oldPrice ? `<span class="old-price">${money(p.oldPrice)}</span>` : ''}</div>
-      <p class="detail-meta">${esc(p.stock)}${p.location ? ' · 📍 ' + esc(p.location) : ''}</p>
+      <p class="detail-meta">${p.condition ? `<span class="cond cond-${esc(p.condition)}">${esc(CONDITION_LABELS[p.condition])}</span> · ` : ''}${esc(p.stock)}${p.location ? ' · 📍 ' + esc(p.location) : ''}</p>
       ${p.seller ? `<p class="detail-meta">Sold by <strong>${esc(p.seller)}</strong></p>` : ''}
       <p class="detail-desc">${esc(p.description || 'No description provided.')}</p>
       <div class="detail-actions">
@@ -1671,6 +1676,7 @@ async function renderSellerDashboard(root, seller) {
       <label for="lf-name">Product name</label><input id="lf-name" type="text" maxlength="255" required>
       <label for="lf-price">Price (₦)</label><input id="lf-price" type="number" min="1" step="any" inputmode="decimal" required>
       <label for="lf-cat">Category</label><select id="lf-cat" required><option value="">Select category</option></select>
+      <label for="lf-cond">Condition</label><select id="lf-cond" required><option value="">Select condition</option><option value="new">New</option><option value="used">Used</option><option value="repaired">Repaired (fixed and tested)</option></select>
       <label for="lf-loc">Location</label><input id="lf-loc" type="text" maxlength="150" value="${esc(seller.location)}" required>
       <label for="lf-qty">Quantity available</label><input id="lf-qty" type="number" min="0" step="1" value="1" required>
       <label for="lf-desc">Description</label><textarea id="lf-desc" maxlength="5000" rows="4"></textarea>
@@ -1719,7 +1725,7 @@ async function renderSellerDashboard(root, seller) {
         ${p.image_url ? `<img src="${esc(p.image_url)}" alt="">` : '<div class="sell-noimg"></div>'}
         <div class="sell-item-body">
           <strong>${esc(p.name)}</strong>
-          <span>${money(p.price)} · ${p.quantity ?? 0} in stock · ${esc(p.location || '')}</span>
+          <span>${money(p.price)} · ${p.item_condition && CONDITION_LABELS[p.item_condition] ? esc(CONDITION_LABELS[p.item_condition]) + ' · ' : ''}${p.quantity ?? 0} in stock · ${esc(p.location || '')}</span>
           <span class="sell-badge ${esc(p.status)}">${esc(p.status)}</span>
         </div>
         <div class="sell-actions">
@@ -1735,7 +1741,7 @@ async function renderSellerDashboard(root, seller) {
     const id = btn.closest('.sell-item').dataset.id, p = products.find(x => String(x.id) === id); if (!p) return;
     try {
       if (btn.dataset.act === 'edit') {
-        editing = p; $('#lf-name').value = p.name; $('#lf-price').value = p.price; $('#lf-cat').value = p.category_id || '';
+        editing = p; $('#lf-name').value = p.name; $('#lf-price').value = p.price; $('#lf-cat').value = p.category_id || ''; $('#lf-cond').value = p.item_condition || '';
         $('#lf-loc').value = p.location || ''; $('#lf-qty').value = p.quantity ?? 0; $('#lf-desc').value = p.description || '';
         $('#lfTitle').textContent = 'Edit product'; $('#lfSubmit').textContent = 'Save changes'; $('#lfCancel').hidden = false;
         $('#lfPreviews').innerHTML = ''; $('#lf-img').value = ''; $('#listingForm').scrollIntoView({ behavior: 'smooth' });
@@ -1758,8 +1764,9 @@ async function renderSellerDashboard(root, seller) {
     e.preventDefault(); showErr('');
     const files = [...$('#lf-img').files].slice(0, 5);
     if (!editing && !files.length) return showErr('Please add at least one photo.');
+    if (!$('#lf-cond').value) return showErr('Please choose the item condition (new, used or repaired).');
     const body = {
-      name: $('#lf-name').value, price: $('#lf-price').value, categoryId: $('#lf-cat').value,
+      name: $('#lf-name').value, price: $('#lf-price').value, categoryId: $('#lf-cat').value, itemCondition: $('#lf-cond').value,
       location: $('#lf-loc').value, quantity: $('#lf-qty').value, description: $('#lf-desc').value
     };
     const btn = $('#lfSubmit'); btn.disabled = true;

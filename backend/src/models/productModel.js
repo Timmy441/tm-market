@@ -19,6 +19,7 @@ const PRODUCT_SELECT = `
       p.sku,
       p.brand,
       p.location,
+      p.item_condition,
       p.status,
       p.seller_id,
       su.is_active AS seller_active,
@@ -327,9 +328,9 @@ async function createSellerProduct(sellerId, d) {
     await client.query('BEGIN');
 
     const r = await client.query(
-      `INSERT INTO products (seller_id, category_id, name, slug, description, price, location, status, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE) RETURNING id`,
-      [sellerId, d.categoryId || null, d.name, d.slug, d.description || null, d.price, d.location, d.status]
+      `INSERT INTO products (seller_id, category_id, name, slug, description, price, location, status, is_active, item_condition)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9) RETURNING id`,
+      [sellerId, d.categoryId || null, d.name, d.slug, d.description || null, d.price, d.location, d.status, d.itemCondition || null]
     );
     const productId = r.rows[0].id;
 
@@ -352,7 +353,7 @@ async function updateSellerProduct(id, sellerId, d) {
   try {
     await client.query('BEGIN');
 
-    const map = { categoryId: 'category_id', name: 'name', description: 'description', price: 'price', location: 'location', status: 'status' };
+    const map = { categoryId: 'category_id', name: 'name', description: 'description', price: 'price', location: 'location', status: 'status', itemCondition: 'item_condition' };
     const sets = [];
     const values = [];
     for (const [key, col] of Object.entries(map)) {
