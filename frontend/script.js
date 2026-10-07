@@ -1368,16 +1368,40 @@ async function apiRequest(method, path, body) {
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Images go straight from the browser to Cloudinary using a signature made by our backend.
+// Phone photos are often 4-12 MB, which fails on mobile data. Shrink them in the browser first.
+async function shrinkImage(file, maxSide = 1600, quality = 0.85) {
+  if (file.size <= 800 * 1024) return file;
+  try {
+    const bmp = await createImageBitmap(file); // keeps the phone's rotation in modern browsers
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); // PNG transparency becomes white, not black
+    ctx.drawImage(bmp, 0, 0, w, h);
+    if (bmp.close) bmp.close();
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', quality));
+    return blob && blob.size < file.size ? blob : file;
+  } catch { return file; }
+}
+
 async function uploadImage(file, signPath = '/api/sellers/me/uploads/sign') {
   if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error('Images must be JPG, PNG or WebP.');
-  if (file.size > 5 * 1024 * 1024) throw new Error('Each image must be under 5 MB.');
+  if (file.size > 25 * 1024 * 1024) throw new Error('Each image must be under 25 MB.');
+  file = await shrinkImage(file);
+  if (file.size > 5 * 1024 * 1024) throw new Error('This image is still too large. Please choose a smaller one.');
   const sig = await apiRequest('POST', signPath);
-  const fd = new FormData();
-  fd.append('file', file); fd.append('api_key', sig.apiKey); fd.append('timestamp', sig.timestamp);
-  fd.append('folder', sig.folder); fd.append('signature', sig.signature);
   let res;
-  try { res = await fetch(`https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`, { method: 'POST', body: fd }); }
-  catch { throw new Error('Image upload failed. Check your connection and try again.'); }
+  for (let attempt = 0; attempt < 2 && !res; attempt++) { // one automatic retry for weak mobile networks
+    const fd = new FormData();
+    fd.append('file', file, 'photo.jpg'); fd.append('api_key', sig.apiKey); fd.append('timestamp', sig.timestamp);
+    fd.append('folder', sig.folder); fd.append('signature', sig.signature);
+    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 60000);
+    try { res = await fetch(`https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`, { method: 'POST', body: fd, signal: ctrl.signal }); }
+    catch { res = null; }
+    finally { clearTimeout(timer); }
+  }
+  if (!res) throw new Error('Image upload failed. Check your connection and try again.');
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.secure_url) {
     const why = data && data.error && typeof data.error.message === 'string' ? data.error.message.slice(0, 160) : '';
@@ -1650,7 +1674,7 @@ async function renderSellerDashboard(root, seller) {
       <label for="lf-loc">Location</label><input id="lf-loc" type="text" maxlength="150" value="${esc(seller.location)}" required>
       <label for="lf-qty">Quantity available</label><input id="lf-qty" type="number" min="0" step="1" value="1" required>
       <label for="lf-desc">Description</label><textarea id="lf-desc" maxlength="5000" rows="4"></textarea>
-      <label for="lf-img">Photos (up to 5, JPG/PNG/WebP, max 5 MB each)</label>
+      <label for="lf-img">Photos (up to 5, JPG/PNG/WebP)</label>
       <input id="lf-img" type="file" accept="image/jpeg,image/png,image/webp" multiple>
       <div class="sell-previews" id="lfPreviews"></div>
       <button type="submit" class="btn-primary" id="lfSubmit">Publish product</button>
@@ -1741,7 +1765,7 @@ async function renderSellerDashboard(root, seller) {
     const btn = $('#lfSubmit'); btn.disabled = true;
     try {
       await Loader.run(async () => {
-        if (files.length) body.images = (await Promise.all(files.map(f => uploadImage(f)))).map(imageUrl => ({ imageUrl }));
+        if (files.length) { const urls = []; for (const f of files) urls.push(await uploadImage(f)); body.images = urls.map(imageUrl => ({ imageUrl })); }
         if (editing) await apiRequest('PUT', `/api/sellers/me/products/${editing.id}`, body);
         else await apiRequest('POST', '/api/sellers/me/products', body);
       }, { text: files.length ? 'Uploading photos…' : 'Saving…' });
