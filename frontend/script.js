@@ -1379,7 +1379,10 @@ async function uploadImage(file, signPath = '/api/sellers/me/uploads/sign') {
   try { res = await fetch(`https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`, { method: 'POST', body: fd }); }
   catch { throw new Error('Image upload failed. Check your connection and try again.'); }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.secure_url) throw new Error('Image upload failed. Please try another image.');
+  if (!res.ok || !data.secure_url) {
+    const why = data && data.error && typeof data.error.message === 'string' ? data.error.message.slice(0, 160) : '';
+    throw new Error(why ? `Image upload failed (${res.status}): ${why}` : `Image upload failed (${res.status || 'no response'}). Please try another image.`);
+  }
   return data.secure_url;
 }
 
