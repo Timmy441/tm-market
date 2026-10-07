@@ -243,3 +243,9 @@ button{padding:0}
   .tmc{right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
   .tmc-panel{width:calc(100vw - 24px);height:min(78dvh,560px)}
 }
+
+/* Category grid: 5 cards (added with Musical Instruments) */
+.category-grid{grid-template-columns:repeat(5,1fr)}
+@media(min-width:951px){.category-grid .category-card strong{font-size:20px}}
+@media(max-width:950px){.category-grid{grid-template-columns:repeat(2,1fr)}.category-grid .category-card:last-child{grid-column:1/-1}.category-grid .category-card:last-child img{object-position:center 36%!important}}
+@media(max-width:460px){.category-grid{grid-template-columns:1fr}.category-grid .category-card:last-child{grid-column:auto}}
