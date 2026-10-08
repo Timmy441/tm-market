@@ -1505,11 +1505,145 @@ function renderOpenStore(root) {
   });
 }
 
+/* ---------- seller earnings: balances, bank account and withdrawals ---------- */
+function initSellerEarnings(box) {
+  const host = $('#sellEarnings');
+  const state = { loaded: false, data: null };
+  const naira = n => '\u20A6' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: Number.isInteger(Number(n || 0)) ? 0 : 2, maximumFractionDigits: 2 });
+  const STATUS = { pending: ['Waiting for review', 'pending'], approved: ['Approved', 'pending'], processing: ['Processing', 'pending'], paid: ['Paid', 'active'], rejected: ['Not approved', 'sold'], failed: ['Failed', 'sold'] };
+  const OPEN = ['pending', 'approved', 'processing'];
+  const BANKS = ['Access Bank', 'Citibank Nigeria', 'Ecobank Nigeria', 'Fidelity Bank', 'First Bank of Nigeria', 'First City Monument Bank (FCMB)', 'Globus Bank', 'Guaranty Trust Bank (GTBank)', 'Keystone Bank', 'Kuda Bank', 'Moniepoint MFB', 'OPay', 'PalmPay', 'Polaris Bank', 'Providus Bank', 'Stanbic IBTC Bank', 'Standard Chartered Bank', 'Sterling Bank', 'SunTrust Bank', 'TAJBank', 'Titan Trust Bank', 'Union Bank of Nigeria', 'United Bank for Africa (UBA)', 'Unity Bank', 'Wema Bank', 'Zenith Bank'];
+  const day = iso => { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; };
+
+  async function load() {
+    try {
+      state.data = await Loader.run(() => apiRequest('GET', '/api/sellers/me/payouts'), { text: 'Loading your earnings\u2026' });
+      state.loaded = true;
+      draw();
+    } catch (err) {
+      host.innerHTML = `<p class="grid-status is-error">${esc(err.message)}</p>`;
+    }
+  }
+
+  function draw() {
+    const { balances: b, bank, withdrawals, rules } = state.data;
+    const open = withdrawals.find(w => OPEN.includes(w.status));
+    const canAsk = !!bank && !open && b.withdrawable >= rules.minWithdrawal;
+    let ask;
+    if (!bank) ask = '<p class="ep-hint">Add your bank details below before you can withdraw.</p>';
+    else if (open) ask = `<p class="ep-hint">Your request for <strong>${esc(naira(open.amount))}</strong> is ${esc(STATUS[open.status][0].toLowerCase())}. You can send a new one after it is settled.</p>`;
+    else if (b.withdrawable < rules.minWithdrawal) ask = `<p class="ep-hint">You need at least <strong>${esc(naira(rules.minWithdrawal))}</strong> available to withdraw.</p>`;
+    else ask = '';
+
+    const none = b.totalEarned === 0 && !withdrawals.length;
+    host.innerHTML = `
+      <div class="ep-grid">
+        <div class="ep-card main"><small>Available to withdraw</small><strong>${esc(naira(b.availableBalance))}</strong></div>
+        <div class="ep-card"><small>Pending</small><strong>${esc(naira(b.pendingBalance))}</strong></div>
+        <div class="ep-card"><small>In review</small><strong>${esc(naira(b.inReview))}</strong></div>
+        <div class="ep-card"><small>Withdrawn so far</small><strong>${esc(naira(b.withdrawn))}</strong></div>
+        <div class="ep-card"><small>Total earned</small><strong>${esc(naira(b.totalEarned))}</strong></div>
+      </div>
+      ${none ? '<p class="ep-hint">No earnings yet. Your balance grows when customers pay for your items.</p>' : ''}
+      <div class="ep-note">
+        <strong>How payouts work</strong>
+        <ul>
+          <li>TM Market keeps ${esc(rules.feePercent)}% of each item's price. You receive the rest.</li>
+          <li>Money is <b>Pending</b> until the buyer has received the item. It becomes <b>Available</b> ${esc(rules.holdDays)} day${rules.holdDays === 1 ? '' : 's'} after delivery is confirmed.</li>
+          <li>Withdrawals are checked and paid by TM Market to your bank account. Minimum: ${esc(naira(rules.minWithdrawal))}.</li>
+        </ul>
+      </div>
+      <div class="ep-note ep-warn">
+        <strong>Shipping and delivery: please read</strong>
+        <ul>
+          <li>TM Market does not add a shipping fee. Agree the delivery cost and method directly with the buyer (their phone number is on the order) before you dispatch.</li>
+          <li>Pack the item carefully and keep proof of dispatch and delivery.</li>
+          <li>Never ask a buyer to pay you outside TM Market. Payments made outside TM Market are not recorded, cannot be paid out, and we cannot help with them.</li>
+        </ul>
+      </div>
+
+      <h3 class="ep-title">Withdraw money</h3>
+      ${ask}
+      ${canAsk ? `<form class="vendor-form ep-form" id="epWdForm" novalidate>
+        <p class="form-error" id="epWdError" role="alert" hidden></p>
+        <label for="ep-amt">Amount (\u20A6)</label>
+        <input id="ep-amt" type="number" inputmode="decimal" min="${esc(rules.minWithdrawal)}" max="${esc(b.withdrawable)}" step="any" placeholder="e.g. 20000" required>
+        <button type="button" class="btn-ghost-sm" id="epAll">Withdraw all available (${esc(naira(b.withdrawable))})</button>
+        <p class="ep-small">It will be sent to ${esc(bank.bankName)}, ${esc(bank.accountNumber)} (${esc(bank.accountName)}).</p>
+        <button type="submit" class="btn-primary">Request withdrawal</button>
+      </form>` : ''}
+
+      <h3 class="ep-title">Bank account</h3>
+      ${bank ? `<p class="ep-small">Current account: <strong>${esc(bank.bankName)}</strong>, ${esc(bank.accountNumber)} (${esc(bank.accountName)})</p>` : ''}
+      <details class="ep-details" ${bank ? '' : 'open'}>
+        <summary>${bank ? 'Change bank details' : 'Add bank details'}</summary>
+        <form class="vendor-form ep-form" id="epBankForm" novalidate>
+          <p class="form-error" id="epBankError" role="alert" hidden></p>
+          <label for="ep-bank">Bank name</label>
+          <input id="ep-bank" list="epBanks" type="text" maxlength="80" placeholder="Start typing your bank" autocomplete="off" required>
+          <datalist id="epBanks">${BANKS.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+          <label for="ep-num">Account number (10 digits)</label>
+          <input id="ep-num" type="text" inputmode="numeric" maxlength="10" pattern="[0-9]*" autocomplete="off" required>
+          <label for="ep-name">Account name (exactly as your bank shows it)</label>
+          <input id="ep-name" type="text" maxlength="120" autocomplete="off" required>
+          <label for="ep-pw">Your TM Market password</label>
+          <input id="ep-pw" type="password" autocomplete="current-password" required>
+          <p class="ep-small">We ask for your password to protect your money. Bank details cannot be changed while a withdrawal is waiting to be paid.</p>
+          <button type="submit" class="btn-primary">Save bank details</button>
+        </form>
+      </details>
+
+      <h3 class="ep-title">Withdrawal history</h3>
+      ${withdrawals.length ? withdrawals.map(w => {
+        const st = STATUS[w.status] || [w.status, 'sold'];
+        const extra = w.status === 'paid' && w.reference ? `Reference: ${w.reference}` : (w.status === 'rejected' && w.note ? `Reason: ${w.note}` : '');
+        return `<div class="ep-row"><div><strong>${esc(naira(w.amount))}</strong><span>${esc(day(w.requestedAt))} \u00B7 ${esc(w.bank.name)} ${esc(w.bank.accountNumber)}</span>${extra ? `<span>${esc(extra)}</span>` : ''}</div><span class="sell-badge ${esc(st[1])}">${esc(st[0])}</span></div>`;
+      }).join('') : '<p class="ep-hint">No withdrawals yet.</p>'}
+    `;
+
+    const show = (id, t) => { const e = $(id); if (e) { e.textContent = t; e.hidden = !t; } };
+
+    const wd = $('#epWdForm');
+    if (wd) {
+      $('#epAll').addEventListener('click', () => { $('#ep-amt').value = b.withdrawable; });
+      wd.addEventListener('submit', async e => {
+        e.preventDefault();
+        show('#epWdError', '');
+        const amount = Number($('#ep-amt').value);
+        if (!(amount > 0)) return show('#epWdError', 'Enter the amount you want to withdraw.');
+        if (amount < rules.minWithdrawal) return show('#epWdError', `The minimum withdrawal is ${naira(rules.minWithdrawal)}.`);
+        if (amount > b.withdrawable) return show('#epWdError', `You can withdraw up to ${naira(b.withdrawable)} right now.`);
+        if (!window.confirm(`Request ${naira(amount)} to ${bank.bankName}, ${bank.accountNumber}?`)) return;
+        try {
+          await Loader.run(() => apiRequest('POST', '/api/sellers/me/withdrawals', { amount }), { text: 'Sending your request\u2026' });
+          toast('Request sent. We will review it and pay you.', 4000);
+          await load();
+        } catch (ex) { show('#epWdError', ex.message); }
+      });
+    }
+
+    $('#epBankForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      show('#epBankError', '');
+      const body = { bankName: $('#ep-bank').value, accountNumber: $('#ep-num').value, accountName: $('#ep-name').value, password: $('#ep-pw').value };
+      if (!/^\d{10}$/.test(body.accountNumber.trim())) return show('#epBankError', 'Account number must be exactly 10 digits.');
+      try {
+        await Loader.run(() => apiRequest('PUT', '/api/sellers/me/bank', body), { text: 'Saving\u2026' });
+        toast('Bank details saved', 3000);
+        await load();
+      } catch (ex) { show('#epBankError', ex.message); }
+    });
+  }
+
+  return { show(on) { host.hidden = !on; if (on && !state.loaded) load(); } };
+}
+
 /* ---------- seller orders: set delivery dates and move paid orders forward ---------- */
 function initSellerOrders(box) {
   const host = $('#sellOrders');
   const badge = $('#ordersBadge');
   const tabs = [...box.querySelectorAll('[data-sell-tab]')];
+  const earnings = initSellerEarnings(box);
   const state = { items: [], total: 0, page: 1, busy: false, loaded: false, touched: false };
 
   const LABEL = { confirmed: 'Paid, ready to prepare', processing: 'Preparing', shipped: 'Shipped', delivered: 'Delivered' };
@@ -1525,6 +1659,7 @@ function initSellerOrders(box) {
     tabs.forEach(t => t.classList.toggle('on', t.dataset.sellTab === name));
     $('#sellProducts').hidden = name !== 'products';
     host.hidden = name !== 'orders';
+    earnings.show(name === 'earnings');
     if (name === 'orders' && !state.loaded) load(true);
   }
   tabs.forEach(t => t.addEventListener('click', () => { state.touched = true; showTab(t.dataset.sellTab); }));
@@ -1666,9 +1801,11 @@ async function renderSellerDashboard(root, seller) {
     <div class="sell-head"><h2>${esc(seller.store_name)}</h2><p>${esc(seller.location)}</p></div>
     <div class="sell-tabs" role="tablist">
       <button type="button" class="sell-tab" data-sell-tab="orders" role="tab">Orders <span class="sell-tab-n" id="ordersBadge" hidden></span></button>
+      <button type="button" class="sell-tab" data-sell-tab="earnings" role="tab">Earnings</button>
       <button type="button" class="sell-tab on" data-sell-tab="products" role="tab">Products</button>
     </div>
     <section id="sellOrders" hidden></section>
+    <section id="sellEarnings" hidden></section>
     <div id="sellProducts">
     <form class="vendor-form" id="listingForm" novalidate>
       <h2 id="lfTitle">Add a product</h2>

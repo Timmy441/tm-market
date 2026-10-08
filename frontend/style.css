@@ -272,3 +272,14 @@ button{padding:0}
 .cond-repaired{background:#dbeafe;color:#1e3a8a}
 /* footer credit */
 .footer-credit{margin-top:14px;text-align:center;font-size:13px;opacity:.75}
+
+.ep-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.ep-card{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--card)}.ep-card.main{border-color:var(--violet)}
+.ep-card small{display:block;color:var(--muted);font-size:12px;font-weight:700}.ep-card strong{display:block;margin-top:4px;color:var(--ink);font-size:22px;letter-spacing:-.02em;overflow-wrap:anywhere}
+.ep-note{margin:14px 0;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);font-size:13px}.ep-note strong{color:var(--ink)}.ep-note ul{margin:8px 0 0;padding-left:18px;list-style:disc}.ep-note li{margin:4px 0}
+.ep-warn{border-left:4px solid #e0a100}
+.ep-title{margin:26px 0 10px;color:var(--ink);font-size:18px}
+.ep-hint,.ep-small{margin:8px 0;color:var(--muted);font-size:13px}.ep-hint strong,.ep-small strong{color:var(--ink)}
+.ep-form{margin-top:10px;padding:20px}.ep-form .btn-ghost-sm{margin-top:10px}
+.ep-details{margin-top:8px}.ep-details summary{cursor:pointer;color:var(--violet);font-weight:800;padding:8px 0}
+.ep-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--card)}.ep-row div{display:flex;flex-direction:column;gap:2px;min-width:0}.ep-row strong{color:var(--ink)}.ep-row span:not(.sell-badge){color:var(--muted);font-size:12px;overflow-wrap:anywhere}
