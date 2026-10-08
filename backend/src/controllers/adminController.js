@@ -19,7 +19,7 @@ const ROLES = ['customer', 'seller', 'admin'];
 const USER_STATUSES = ['active', 'suspended'];
 const PRODUCT_STATUSES = ['active', 'pending', 'sold', 'removed'];
 const ORDER_FILTERS = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'overdue', 'refund_check'];
-// Admins can only move a paid order forward. Cancelling and refunding stay manual in the Paystack dashboard.
+// Admins can only move a paid order forward. The money itself is refunded in the Paystack dashboard; the refund is then recorded with POST /orders/:id/refund.
 const ADMIN_ORDER_STEPS = { processing: ['confirmed'], shipped: ['confirmed', 'processing'], delivered: ['shipped'] };
 
 function parsePositiveInt(value) {
@@ -176,7 +176,7 @@ function formatAdminOrder(r) {
       name: r.shipping_name, phone: r.shipping_phone, address: r.shipping_address,
       city: r.shipping_city, state: r.shipping_state || null, country: r.shipping_country
     },
-    payment: { status: r.payment_status || null, reference: r.payment_reference || null, paidAt: r.paid_at || null },
+    payment: { status: r.payment_status || null, reference: r.payment_reference || null, paidAt: r.paid_at || null, refundReference: r.refund_reference || null, refundedAt: r.refunded_at || null },
     items: items.map(i => ({ name: i.name, quantity: i.quantity, unitPrice: Number(i.unit_price), totalPrice: Number(i.total_price) })),
     events: (Array.isArray(r.events) ? r.events : []).map(e => ({ status: e.status, note: e.note || null, at: e.at }))
   };

@@ -296,24 +296,47 @@ async function orderSheet(id) {
     const o = d.order, moves = ONEXT[o.status] || [], canDates = ['confirmed', 'processing', 'shipped'].includes(o.status);
     const items = o.items.map(i => `<li>${i.quantity} × ${esc(i.name)} <b>${naira(i.totalPrice)}</b></li>`).join('');
     const hist = o.events.length ? o.events.map(e => `<li>${date(e.at)}: ${esc(OSTAT[e.status] || e.status)}${e.note ? ' (' + esc(e.note) + ')' : ''}</li>`).join('') : '<li>No steps recorded yet.</li>';
-    const warn = o.status === 'cancelled' && o.payment.status === 'successful' ? '<p class="msg">Money was received for this cancelled order. Refund it manually in the Paystack dashboard.</p>' : '';
+    const warn = o.status === 'cancelled' && o.payment.status === 'successful' ? '<p class="msg">Money was received for this cancelled order. Refund it in the Paystack dashboard, then tap Record refund below.</p>' : '';
     $('#sheet').style.maxWidth = '560px';
     $('#sheet').innerHTML = `<h2>${esc(o.orderNumber)}</h2><p>${ostatPill(o.status)}</p>${warn}<dl class="kv">
       <dt>Buyer</dt><dd>${esc(o.buyer.name || '-')}<br>${esc(o.buyer.email || '')}<br>${esc(o.buyer.phone || '')}</dd>
       <dt>Deliver to</dt><dd>${esc(o.shipping.name)}, ${esc(o.shipping.phone)}<br>${esc(o.shipping.address)}, ${esc(o.shipping.city)}${o.shipping.state ? ', ' + esc(o.shipping.state) : ''}</dd>
       <dt>Seller</dt><dd>${esc(o.seller.storeName || '-')}${o.seller.email ? '<br>' + esc(o.seller.email) : ''}</dd>
       <dt>Items</dt><dd><ul style="margin:0;padding-left:18px">${items}</ul><b>Total ${naira(o.total)}</b></dd>
-      <dt>Payment</dt><dd>${esc(o.payment.status || 'none')}${o.payment.reference ? '<br>Ref: ' + esc(o.payment.reference) : ''}${o.payment.paidAt ? '<br>Paid ' + date(o.payment.paidAt) : ''}</dd>
+      <dt>Payment</dt><dd>${esc(o.payment.status || 'none')}${o.payment.reference ? '<br>Ref: ' + esc(o.payment.reference) : ''}${o.payment.paidAt ? '<br>Paid ' + date(o.payment.paidAt) : ''}${o.payment.refundReference ? '<br>Refunded ' + date(o.payment.refundedAt) + '<br>Refund ref: ' + esc(o.payment.refundReference) : ''}</dd>
       <dt>Dates</dt><dd>${esc(windowText(o.deliveryWindow))}</dd>
       <dt>History</dt><dd><ul style="margin:0;padding-left:18px">${hist}</ul></dd></dl>
       ${canDates ? `<div class="tools"><input id="wf" type="date" aria-label="From date" value="${esc(o.deliveryWindow ? o.deliveryWindow.from : '')}"><input id="wt" type="date" aria-label="To date" value="${esc(o.deliveryWindow ? o.deliveryWindow.to : '')}"><button class="btn" id="wsave">Save dates</button></div>` : ''}
       ${moves.length ? `<div class="tools"><input id="onote" maxlength="200" placeholder="Optional note for the buyer" aria-label="Note"></div>` : ''}
-      <div class="acts">${moves.map(m => `<button class="btn ${m[2]}" data-st="${m[1]}">${m[0]}</button>`).join('')}<button class="btn" id="cls">Close</button></div>
-      <p class="msg" id="smsg"></p>`;
+      <div id="rform"></div>
+      <div class="acts" id="oacts">${moves.map(m => `<button class="btn ${m[2]}" data-st="${m[1]}">${m[0]}</button>`).join('')}${o.payment.status === 'successful' ? '<button class="btn bad" id="refund">Record refund</button>' : ''}<button class="btn" id="cls">Close</button></div>
+      <p class="msg" id="smsg" role="alert"></p>`;
     $('#modal').hidden = false; $('#cls').onclick = () => { $('#modal').hidden = true; $('#sheet').style.maxWidth = ''; };
     if ($('#wsave')) $('#wsave').onclick = async () => {
       try { await run('Saving…', () => api(`/api/admin/orders/${o.id}/delivery-window`, { method: 'PUT', body: JSON.stringify({ from: $('#wf').value, to: $('#wt').value }) })); orderSheet(o.id); orders(); }
       catch (e) { $('#smsg').textContent = e.message; }
+    };
+    if ($('#refund')) $('#refund').onclick = () => {
+      const draft = { ref: '', note: '' };
+      const form = html => { $('#rform').innerHTML = html; $('#oacts').hidden = true; $('#smsg').textContent = ''; };
+      const back = () => { $('#rform').innerHTML = ''; $('#oacts').hidden = false; $('#smsg').textContent = ''; };
+      const step1 = () => {
+        form(`<p style="font-size:13px;margin-bottom:8px">First refund the buyer in the Paystack dashboard (open the payment and choose Refund). Then record it here. This does not move any money.</p><div class="tools"><input id="rref" maxlength="120" value="${esc(draft.ref)}" placeholder="Paystack refund reference (required)" aria-label="Refund reference"><input id="rnote" maxlength="200" value="${esc(draft.note)}" placeholder="Reason for the refund (required)" aria-label="Reason"></div><div class="acts"><button class="btn bad" id="rnext">Continue</button><button class="btn" id="rback">Back</button></div>`);
+        $('#rback').onclick = back;
+        $('#rnext').onclick = () => {
+          const ref = $('#rref').value.trim(), note = $('#rnote').value.trim(); draft.ref = ref; draft.note = note;
+          if (ref.length < 4) { $('#smsg').textContent = 'Enter the Paystack refund reference (at least 4 characters).'; return; }
+          if (note.length < 3) { $('#smsg').textContent = 'Enter a short reason (at least 3 characters).'; return; }
+          form(`<p style="margin-bottom:10px"><b>Confirm:</b> you have already refunded <b>${naira(o.total)}</b> to <b>${esc(o.buyer.name || o.buyer.email || 'the buyer')}</b> for order <b>${esc(o.orderNumber)}</b>, refund reference <b>${esc(ref)}</b>. The order will be cancelled, this order will no longer count in the seller's earnings, and the buyer and seller will be emailed. This cannot be undone.</p><div class="acts"><button class="btn bad" id="ryes">Yes, record the refund</button><button class="btn" id="rback2">Back</button></div>`);
+          $('#rback2').onclick = step1;
+          $('#ryes').onclick = async () => {
+            $('#ryes').disabled = true;
+            try { await run('Saving…', () => api(`/api/admin/orders/${o.id}/refund`, { method: 'POST', body: JSON.stringify({ reference: ref, note }) })); orderSheet(o.id); orders(); checkAlerts(); }
+            catch (e) { $('#smsg').textContent = e.message; $('#ryes').disabled = false; }
+          };
+        };
+      };
+      step1();
     };
     document.querySelectorAll('.acts .btn[data-st]').forEach(b => b.onclick = async () => {
       if (b.dataset.st === 'delivered' && !confirm('Mark this order as delivered? Only do this when you are sure the buyer has received it.')) return;

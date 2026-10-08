@@ -267,6 +267,7 @@ async function getOrderDetail(id) {
             bu.first_name AS buyer_first_name, bu.last_name AS buyer_last_name, bu.email AS buyer_email, bu.phone AS buyer_phone,
             o.seller_id, sp.store_name AS seller_name, su.email AS seller_email,
             pay.status AS payment_status, pay.transaction_reference AS payment_reference, pay.paid_at,
+            pay.refund_reference, pay.refunded_at,
             COALESCE((SELECT json_agg(json_build_object('name', oi.product_name, 'quantity', oi.quantity,
                         'unit_price', oi.unit_price, 'total_price', oi.total_price) ORDER BY oi.id)
                       FROM order_items oi WHERE oi.order_id = o.id), '[]'::json) AS items,

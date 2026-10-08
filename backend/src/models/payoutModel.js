@@ -21,7 +21,7 @@ async function syncEarnings(db, sellerId, percent) {
 // pending   = paid orders not delivered yet, or delivered but still inside the hold period
 // released  = delivered and past the hold period
 // available = released - already paid out - requests still open
-async function readBalances(db, sellerId, hold) {
+async function readRaw(db, sellerId, hold) {
   const e = (await db.query(
     `SELECT
         COALESCE(SUM(e.net) FILTER (WHERE o.status IN ('confirmed', 'processing', 'shipped')
@@ -43,8 +43,11 @@ async function readBalances(db, sellerId, hold) {
     [sellerId]
   )).rows[0];
 
-  const pending = toKobo(e.pending), released = toKobo(e.released);
-  const withdrawn = toKobo(w.withdrawn), inReview = toKobo(w.in_review);
+  return { pending: toKobo(e.pending), released: toKobo(e.released), withdrawn: toKobo(w.withdrawn), inReview: toKobo(w.in_review) };
+}
+
+async function readBalances(db, sellerId, hold) {
+  const { pending, released, withdrawn, inReview } = await readRaw(db, sellerId, hold);
   const available = Math.max(released - withdrawn - inReview, 0);
 
   return {
@@ -206,4 +209,4 @@ async function settle(id, adminId, newStatus, note, reference) {
 const markPaid = (id, adminId, reference, note) => settle(id, adminId, 'paid', note, reference);
 const reject = (id, adminId, note) => settle(id, adminId, 'rejected', note, null);
 
-module.exports = { getSummary, saveBank, requestWithdrawal, adminListWithdrawals, adminGetWithdrawal, markPaid, reject };
+module.exports = { readRaw, getSummary, saveBank, requestWithdrawal, adminListWithdrawals, adminGetWithdrawal, markPaid, reject };

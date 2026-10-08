@@ -67,6 +67,8 @@ function normalizeOutcome(outcome) {
       return { ok: false, code: 409, message: 'Payment was received after cancellation. Support has been notified.' };
     case 'oversold':
       return { ok: false, code: 409, message: 'Payment succeeded but stock changed. Support has been notified.' };
+    case 'already_refunded':
+      return { ok: false, code: 409, message: 'This payment has been refunded.' };
     case 'unexpected_status':
       return { ok: false, code: 409, message: 'This order cannot be confirmed from its current status.' };
     default:

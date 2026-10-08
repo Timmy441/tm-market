@@ -24,14 +24,14 @@ async function savePendingPayment(orderId, reference, amount) {
            amount = EXCLUDED.amount,
            status = 'pending',
            updated_at = NOW()
-     WHERE payments.status <> 'successful'
+     WHERE payments.status NOT IN ('successful', 'refunded')
      RETURNING id`,
     [orderId, reference, amount]
   );
   return r.rowCount > 0;
 }
 
-// Outcomes: paid | already_paid | duplicate_payment | amount_mismatch | no_payment_record |
+// Outcomes: paid | already_paid | already_refunded | duplicate_payment | amount_mismatch | no_payment_record |
 //           unknown_order | paid_but_cancelled | oversold | unexpected_status
 async function confirmPayment(orderId, reference, paidKobo, currency) {
   const client = await pool.connect();
@@ -57,6 +57,11 @@ async function confirmPayment(orderId, reference, paidKobo, currency) {
     if (!payment) {
       await client.query('ROLLBACK');
       return { outcome: 'no_payment_record', orderNumber: order.order_number };
+    }
+
+    if (payment.status === 'refunded') {
+      await client.query('ROLLBACK');
+      return { outcome: 'already_refunded', orderNumber: order.order_number };
     }
 
     if (payment.status === 'successful') {
