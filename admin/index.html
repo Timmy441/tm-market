@@ -73,7 +73,7 @@ th{color:var(--muted);font-size:12px}tr:last-child td{border:0}tr.row{cursor:poi
 <div id="appView" hidden>
   <header><div class="wrap bar">
     <img src="assets/logo.svg" alt="TM Market">
-    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders<span class="badge" id="obadge" hidden></span></button></nav>
+    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders<span class="badge" id="obadge" hidden></span></button><button class="tab" data-tab="withdrawals">Withdrawals<span class="badge" id="wbadge" hidden></span></button></nav>
     <span id="who" style="font-size:13px"></span><button class="btn" id="out">Sign out</button>
   </div></header>
   <main class="wrap" id="view"></main>
@@ -139,11 +139,14 @@ function beep() {
     o.start(); o.stop(c.currentTime + 0.25); setTimeout(() => c.close(), 600);
   } catch (e) {}
 }
-function setBadge(n) {
-  const b = $('#obadge'); b.textContent = n > 99 ? '99+' : n; b.hidden = !n;
-  document.title = (n ? '(' + n + ') ' : '') + 'Admin | TM Market';
+let ob = 0, wb = 0, alertTo = 'orders', seenW = null;
+function paintBadges() {
+  const a = $('#obadge'), b = $('#wbadge'); a.textContent = ob > 99 ? '99+' : ob; a.hidden = !ob; b.textContent = wb > 99 ? '99+' : wb; b.hidden = !wb;
+  document.title = (ob + wb ? '(' + (ob + wb) + ') ' : '') + 'Admin | TM Market';
 }
-function raise(text) { $('#alerttxt').textContent = text; $('#alertbar').hidden = false; beep(); }
+function setBadge(n) { ob = n; paintBadges(); }
+function setWBadge(n) { wb = n; paintBadges(); }
+function raise(text, to) { alertTo = to || 'orders'; $('#alerttxt').textContent = text; $('#alertgo').textContent = alertTo === 'withdrawals' ? 'View withdrawals' : 'View orders'; $('#alertbar').hidden = false; beep(); }
 async function checkAlerts() {
   if (!token) return;
   try {
@@ -158,18 +161,25 @@ async function checkAlerts() {
     }
     seenPaid = paid; seenRefund = refund;
   } catch (e) { /* a missed check is fine; the next one tries again */ }
+  try {
+    const w = await api('/api/admin/withdrawals?limit=1');
+    const open = w.openCount || 0;
+    setWBadge(open);
+    if (seenW !== null && open > seenW) raise((open - seenW) === 1 ? 'New withdrawal request from a seller.' : (open - seenW) + ' new withdrawal requests from sellers.', 'withdrawals');
+    seenW = open;
+  } catch (e) { /* same: try again next time */ }
 }
-function startAlerts() { stopAlerts(); seenPaid = null; seenRefund = null; checkAlerts(); alertTimer = setInterval(checkAlerts, 30000); }
-function stopAlerts() { clearInterval(alertTimer); alertTimer = null; setBadge(0); $('#alertbar').hidden = true; }
+function startAlerts() { stopAlerts(); seenPaid = null; seenRefund = null; seenW = null; checkAlerts(); alertTimer = setInterval(checkAlerts, 30000); }
+function stopAlerts() { clearInterval(alertTimer); alertTimer = null; setBadge(0); setWBadge(0); $('#alertbar').hidden = true; }
 $('#alertx').onclick = () => { $('#alertbar').hidden = true; };
-$('#alertgo').onclick = () => { $('#alertbar').hidden = true; page = 1; show('orders'); };
+$('#alertgo').onclick = () => { $('#alertbar').hidden = true; page = 1; show(alertTo); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden && alertTimer) checkAlerts(); });
 
 /* navigation */
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { page = 1; show(b.dataset.tab); });
 function show(t) {
   tab = t; $('#view').innerHTML = ''; document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  ({ dash, users, products, orders })[t]();
+  ({ dash, users, products, orders, withdrawals })[t]();
 }
 const fail = e => { $('#view').innerHTML = `<div class="card err">${esc(e.message)}<br><br><button class="btn" onclick="show(tab)">Try again</button></div>`; };
 
@@ -310,6 +320,93 @@ async function orderSheet(id) {
       try { await run('Saving…', () => api(`/api/admin/orders/${o.id}/status`, { method: 'POST', body: JSON.stringify({ status: b.dataset.st, note: $('#onote') ? $('#onote').value : '' }) })); orderSheet(o.id); orders(); }
       catch (e) { $('#smsg').textContent = e.message; }
     });
+  } catch (e) { alert(e.message); }
+}
+
+/* withdrawals: seller payout requests (paid manually, then recorded here) */
+const WSTAT = { pending: 'Waiting', approved: 'Approved', processing: 'Processing', paid: 'Paid', rejected: 'Rejected', failed: 'Failed' };
+const WOPEN = ['pending', 'approved', 'processing'];
+const wPill = st => `<span class="pill ${st === 'paid' ? 'ok' : st === 'rejected' || st === 'failed' ? 'no' : 'wait'}">${esc(WSTAT[st] || st)}</span>`;
+const dateTime = d => d ? new Date(d).toLocaleString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-';
+
+async function withdrawals() {
+  const keep = $('#wfa') ? $('#wfa').value : '';
+  if (!$('#wfa')) $('#view').innerHTML = `<h1>Withdrawals</h1><div class="tools"><select id="wfa" aria-label="Status"><option value="">All requests</option><option value="pending">Waiting</option><option value="approved">Approved</option><option value="processing">Processing</option><option value="paid">Paid</option><option value="rejected">Rejected</option><option value="failed">Failed</option></select></div><div id="list"></div>`;
+  else $('#wfa').value = keep;
+  try {
+    const d = await run('Loading withdrawals…', () => api('/api/admin/withdrawals?' + qs({ status: $('#wfa').value, page })));
+    setWBadge(d.openCount || 0);
+    const rows = d.withdrawals.map(w => `<tr class="row" data-id="${esc(w.id)}"><td>${esc((w.seller && w.seller.store) || (w.seller && w.seller.name) || '-')}</td><td><b>${naira(w.amount)}</b></td><td>${esc(w.bank.name || '-')}</td><td>${wPill(w.status)}</td><td>${date(w.requestedAt)}</td></tr>`).join('');
+    $('#list').innerHTML = `<div class="tbl"><table><tr><th>Store</th><th>Amount</th><th>Bank</th><th>Status</th><th>Requested</th></tr>${rows || '<tr><td colspan="5" class="empty">' + ($('#wfa').value ? 'No withdrawals with this status.' : 'No withdrawal requests yet.') + '</td></tr>'}</table></div>${pager(d)}`;
+    $('#wfa').onchange = () => { page = 1; withdrawals(); };
+    if ($('#prev')) $('#prev').onclick = () => { page--; withdrawals(); };
+    if ($('#next')) $('#next').onclick = () => { page++; withdrawals(); };
+    document.querySelectorAll('tr.row').forEach(r => r.onclick = () => withdrawalSheet(r.dataset.id));
+  } catch (e) { $('#list').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+}
+
+function copyText(text, btn) {
+  const ok = () => { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = o; }, 1500); };
+  const old = () => { const t = document.createElement('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); ok(); } catch (e) { btn.textContent = 'Select and copy by hand'; } t.remove(); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, old); else old();
+}
+
+async function withdrawalSheet(id) {
+  try {
+    const d = await run('Loading request…', () => api('/api/admin/withdrawals/' + id));
+    const w = d.withdrawal, s = w.seller || {}, open = WOPEN.includes(w.status);
+    const hist = (w.events && w.events.length) ? w.events.map(e => `<li>${dateTime(e.at)}: ${esc(WSTAT[e.status] || e.status)}${e.note ? ' (' + esc(e.note) + ')' : ''}</li>`).join('') : '<li>No steps recorded yet.</li>';
+    const cp = (t, k) => `<button class="btn" data-copy="${esc(t)}" aria-label="Copy ${k}" style="min-height:30px;padding:0 10px;margin-left:8px">Copy</button>`;
+    $('#sheet').style.maxWidth = '560px';
+    $('#sheet').innerHTML = `<h2>${naira(w.amount)} to ${esc(s.store || s.name || 'seller')}</h2><p>${wPill(w.status)}</p><dl class="kv">
+      <dt>Seller</dt><dd>${esc(s.name || '-')}<br>${esc(s.email || '')}<br>${esc(s.phone || '')}</dd>
+      <dt>Store</dt><dd>${esc(s.store || '-')}</dd>
+      <dt>Amount</dt><dd><b>${naira(w.amount)}</b>${cp(String(w.amount), 'amount')}</dd>
+      <dt>Bank</dt><dd>${esc(w.bank.name || '-')}${w.bank.code ? ' (code ' + esc(w.bank.code) + ')' : ''}</dd>
+      <dt>Account name</dt><dd>${esc(w.bank.accountName || '-')}${cp(w.bank.accountName || '', 'account name')}</dd>
+      <dt>Account no.</dt><dd><b>${esc(w.bank.accountNumber || '-')}</b>${cp(w.bank.accountNumber || '', 'account number')}</dd>
+      <dt>Requested</dt><dd>${dateTime(w.requestedAt)}</dd>
+      ${w.paidAt ? `<dt>Paid</dt><dd>${dateTime(w.paidAt)}</dd>` : ''}
+      ${w.reference ? `<dt>Reference</dt><dd>${esc(w.reference)}</dd>` : ''}
+      ${w.note ? `<dt>Note</dt><dd>${esc(w.note)}</dd>` : ''}
+      <dt>History</dt><dd><ul style="margin:0;padding-left:18px">${hist}</ul></dd></dl>
+      ${open ? '<p style="font-size:13px">Before paying, check that the account name matches the seller. Pay first, then record the reference here.</p>' : ''}
+      <div id="wform"></div>
+      <div class="acts" id="wacts">${open ? '<button class="btn good" id="wpaid">Mark as paid</button><button class="btn bad" id="wrej">Reject</button>' : ''}<button class="btn" id="cls">Close</button></div>
+      <p class="msg" id="smsg" role="alert"></p>`;
+    $('#modal').hidden = false;
+    $('#cls').onclick = () => { $('#modal').hidden = true; $('#sheet').style.maxWidth = ''; };
+    document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy, b));
+    const form = html => { $('#wform').innerHTML = html; $('#wacts').hidden = true; $('#smsg').textContent = ''; };
+    const back = () => { $('#wform').innerHTML = ''; $('#wacts').hidden = false; $('#smsg').textContent = ''; };
+    const send = async (path, body, btn) => {
+      btn.disabled = true;
+      try { await run('Saving…', () => api(`/api/admin/withdrawals/${w.id}/${path}`, { method: 'POST', body: JSON.stringify(body) })); withdrawalSheet(w.id); withdrawals(); checkAlerts(); }
+      catch (e) { $('#smsg').textContent = e.message; btn.disabled = false; }
+    };
+    const draft = { ref: '', note: '' };
+    if ($('#wpaid')) $('#wpaid').onclick = () => {
+      form(`<p style="font-size:13px;margin-bottom:8px">Enter the transfer reference from Paystack or your bank.</p><div class="tools"><input id="wref" maxlength="120" value="${esc(draft.ref)}" placeholder="Transfer reference (required)" aria-label="Transfer reference"><input id="wnote" maxlength="200" value="${esc(draft.note)}" placeholder="Optional note" aria-label="Note"></div><div class="acts"><button class="btn good" id="wnext">Continue</button><button class="btn" id="wback">Back</button></div>`);
+      $('#wback').onclick = back;
+      $('#wnext').onclick = () => {
+        const ref = $('#wref').value.trim(), note = $('#wnote').value.trim(); draft.ref = ref; draft.note = note;
+        if (ref.length < 4) { $('#smsg').textContent = 'Enter the transfer reference (at least 4 characters).'; return; }
+        form(`<p style="margin-bottom:10px"><b>Confirm:</b> you have already sent <b>${naira(w.amount)}</b> to <b>${esc(w.bank.accountName)}</b>, ${esc(w.bank.name)} ${esc(w.bank.accountNumber)}, reference <b>${esc(ref)}</b>. The seller will be emailed and this cannot be undone.</p><div class="acts"><button class="btn good" id="wyes">Yes, mark as paid</button><button class="btn" id="wback2">Back</button></div>`);
+        $('#wback2').onclick = () => $('#wpaid').onclick();
+        $('#wyes').onclick = () => send('paid', { reference: ref, note }, $('#wyes'));
+      };
+    };
+    if ($('#wrej')) $('#wrej').onclick = () => {
+      form(`<p style="font-size:13px;margin-bottom:8px">Give the seller a reason. They will see it.</p><div class="tools"><input id="wreason" maxlength="300" placeholder="Reason (required)" aria-label="Reason"></div><div class="acts"><button class="btn bad" id="wnext">Continue</button><button class="btn" id="wback">Back</button></div>`);
+      $('#wback').onclick = back;
+      $('#wnext').onclick = () => {
+        const reason = $('#wreason').value.trim();
+        if (reason.length < 3) { $('#smsg').textContent = 'Enter a reason (at least 3 characters).'; return; }
+        form(`<p style="margin-bottom:10px"><b>Confirm:</b> reject the ${naira(w.amount)} request from ${esc(s.store || s.name || 'this seller')}? Reason shown to the seller: “${esc(reason)}”. The money goes back to their available balance.</p><div class="acts"><button class="btn bad" id="wyes">Yes, reject</button><button class="btn" id="wback2">Back</button></div>`);
+        $('#wback2').onclick = () => $('#wrej').onclick();
+        $('#wyes').onclick = () => send('reject', { note: reason }, $('#wyes'));
+      };
+    };
   } catch (e) { alert(e.message); }
 }
 
