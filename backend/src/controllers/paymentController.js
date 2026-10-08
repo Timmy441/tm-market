@@ -5,7 +5,7 @@ const {
   savePendingPayment,
   confirmPayment
 } = require('../models/paymentModel');
-const { notifyAdminOfOrder } = require('../utils/adminAlert');
+const { notifyAdminOfOrder, notifySellerOfOrder } = require('../utils/adminAlert');
 const {
   paymentsStatus,
   initializeTransaction,
@@ -161,7 +161,7 @@ async function verifyPaystackPayment(req, res) {
 
     const result = await confirmPayment(order.id, reference, Number(tx.amount), tx.currency);
     const mapped = normalizeOutcome(result.outcome);
-    if (ALERT_OUTCOMES.includes(result.outcome)) notifyAdminOfOrder(order.id, result.outcome);
+    if (ALERT_OUTCOMES.includes(result.outcome)) { notifyAdminOfOrder(order.id, result.outcome); notifySellerOfOrder(order.id, result.outcome); }
 
     return res.status(mapped.code).json({
       success: mapped.ok,
@@ -200,7 +200,7 @@ async function paystackWebhook(req, res) {
     }
 
     const result = await confirmPayment(orderId, reference, Number(data.amount), data.currency);
-    if (ALERT_OUTCOMES.includes(result.outcome)) notifyAdminOfOrder(orderId, result.outcome);
+    if (ALERT_OUTCOMES.includes(result.outcome)) { notifyAdminOfOrder(orderId, result.outcome); notifySellerOfOrder(orderId, result.outcome); }
     if (result.outcome !== 'paid' && result.outcome !== 'already_paid') {
       console.warn('Webhook payment outcome:', result.outcome, result.orderNumber || orderId);
     }

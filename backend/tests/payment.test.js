@@ -26,7 +26,7 @@ mock('../src/models/paymentModel', {
   getOrderAlertInfo: async () => ({
     order_number: 'TM-TEST-7', total: '1500.00', shipping_name: 'Ada', shipping_phone: '0801', shipping_address: '1 Road',
     shipping_city: 'Enugu', shipping_state: 'Enugu', buyer_first_name: 'Ada', buyer_last_name: 'O', buyer_email: 'buyer@test.com',
-    seller_name: 'Store', items: [{ name: 'Pencil', quantity: 2 }]
+    seller_name: 'Store', seller_email: 'seller@test.com', delivery_window_start: '2026-10-12', delivery_window_end: '2026-10-16', items: [{ name: 'Pencil', quantity: 2 }]
   })
 });
 
@@ -100,7 +100,8 @@ test('admin gets an email when an order is paid', async () => {
   const r = await call(c.verifyPaystackPayment, verifyReq);
   await tick();
   assert.strictEqual(r.code, 200);
-  assert.strictEqual(sent.length, 1);
+  const adminMail = sent.filter(m => m.to === 'admin@test.com');
+  assert.strictEqual(adminMail.length, 1);
   assert.strictEqual(sent[0].to, 'admin@test.com');
   assert.match(sent[0].subject, /New paid order: TM-TEST-7/);
   assert.match(sent[0].text, /2 x Pencil/);
@@ -118,7 +119,8 @@ test('admin email is skipped for already-paid, unset address, and never breaks p
   state.confirm = { outcome: 'paid', orderNumber: 'TM-TEST-7' };
   await call(c.verifyPaystackPayment, verifyReq);
   await tick();
-  assert.strictEqual(sent.length, 0);
+  assert.strictEqual(sent.filter(m => m.to === 'admin@test.com').length, 0);
+  sent.length = 0;
 
   process.env.ADMIN_NOTIFY_EMAIL = 'admin@test.com';
   mailFails = true;
@@ -143,6 +145,35 @@ test('admin email also fires from the webhook, and flags refund cases', async ()
   assert.match(sent[0].subject, /ACTION NEEDED/);
   delete process.env.ADMIN_NOTIFY_EMAIL;
   state.confirm = { outcome: 'paid', orderNumber: 'TM-TEST-7' };
+});
+
+test('seller gets an email on a paid order only, and it never claims payout', async () => {
+  process.env.ADMIN_NOTIFY_EMAIL = 'admin@test.com';
+  sent.length = 0;
+  state.confirm = { outcome: 'paid', orderNumber: 'TM-TEST-7' };
+  await call(c.verifyPaystackPayment, verifyReq);
+  await tick();
+  const toSeller = sent.filter(m => m.to === 'seller@test.com');
+  assert.strictEqual(sent.length, 2);
+  assert.strictEqual(toSeller.length, 1);
+  assert.match(toSeller[0].subject, /TM-TEST-7/);
+  assert.match(toSeller[0].text, /2 x Pencil/);
+  assert.match(toSeller[0].text, /1 Road, Enugu, Enugu/);
+  assert.doesNotMatch(toSeller[0].text, /you have been paid|payout/i);
+
+  sent.length = 0;
+  state.confirm = { outcome: 'oversold', orderNumber: 'TM-TEST-7' };
+  await call(c.verifyPaystackPayment, verifyReq);
+  await tick();
+  assert.strictEqual(sent.filter(m => m.to === 'seller@test.com').length, 0);
+
+  sent.length = 0;
+  delete process.env.ADMIN_NOTIFY_EMAIL;
+  state.confirm = { outcome: 'paid', orderNumber: 'TM-TEST-7' };
+  await call(c.verifyPaystackPayment, verifyReq);
+  await tick();
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(sent[0].to, 'seller@test.com');
 });
 
 test('verify payment maps paid outcome to success response', async () => {
