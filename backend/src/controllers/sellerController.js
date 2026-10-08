@@ -5,7 +5,8 @@ const { findUserById } = require('../models/userModel');
 const {
   findSellerByUserId,
   createSellerAndPromote,
-  updateSeller
+  updateSeller,
+  getPublicSellerStore
 } = require('../models/sellerModel');
 const {
   listSellerProducts,
@@ -81,6 +82,19 @@ async function becomeSeller(req, res) {
     }
     console.error('Become seller error:', error);
     return res.status(500).json({ success: false, message: 'Unable to create seller profile' });
+  }
+}
+
+async function getPublicStore(req, res) {
+  try {
+    const userId = Number(req.params.userId);
+    if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ success: false, message: 'Invalid seller.' });
+    const store = await getPublicSellerStore(userId);
+    if (!store) return res.status(404).json({ success: false, message: 'Store not found.' });
+    return res.status(200).json({ success: true, ...store });
+  } catch (error) {
+    console.error('Get public seller store error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to load this store.' });
   }
 }
 
@@ -289,7 +303,7 @@ async function deleteMyProduct(req, res) {
 }
 
 module.exports = {
-  becomeSeller, getMySeller, updateMySeller, signUpload,
+  becomeSeller, getPublicStore, getMySeller, updateMySeller, signUpload,
   getMyProducts, createMyProduct, updateMyProduct, deleteMyProduct,
   validateListing
 };

@@ -10,6 +10,9 @@ const router = express.Router();
 // Any logged-in customer can open a store (this is what upgrades them to SELLER).
 router.post('/', authenticateToken, c.becomeSeller);
 
+// Public store page data (store name, location, active products). No login or seller role needed.
+router.get('/:userId/store', c.getPublicStore);
+
 // Everything below is SELLER-only, verified against the database.
 router.get('/me', authenticateToken, requireSeller, c.getMySeller);
 router.put('/me', authenticateToken, requireSeller, c.updateMySeller);

@@ -288,3 +288,19 @@ button{padding:0}
 @media(max-width:460px){body[data-page="landing"] .header-actions{grid-column:1/-1;grid-row:2;justify-content:flex-start;flex-wrap:wrap;row-gap:6px}body[data-page="landing"] .search-wrap{grid-row:3}}@media(max-width:400px){.header-main:has(.search-wrap) .header-actions{grid-column:1/-1;grid-row:2;justify-content:flex-start;flex-wrap:wrap;row-gap:6px}.header-main:has(.search-wrap) .search-wrap{grid-row:3}}
 @media(max-width:340px){.sell-tab{padding:11px 12px}}
 body.dark :is(.announcement,.cart-btn,.trust-strip,.chip.active,.chip:hover,.badge,.add-btn,.review footer>span,.coupon button,.toast,.back-top,.bag-link,.avatars span){background:#2f2870;color:#fff}body.dark :is(.chip.active,.chip:hover){border-color:#2f2870}
+
+/* ---- TM Store page ---- */
+.store-page{padding:24px 0 60px}
+.store-state{padding:60px 0;text-align:center;color:var(--muted)}
+.store-state.is-error{color:#d92d20}
+.store-head{display:flex;gap:18px;align-items:center;padding:22px;margin-bottom:22px;border:1px solid var(--line);border-radius:20px;background:var(--card)}
+.store-logo{flex:none;width:76px;height:76px;border-radius:18px;object-fit:cover;background:var(--cream)}
+.store-logo-fallback{display:grid;place-items:center;background:var(--ink);color:#fff;font-size:30px;font-weight:900}
+body.dark .store-logo-fallback{background:#2f2870}
+.store-info{min-width:0}
+.store-info h1{margin:0 0 4px;color:var(--ink);font-size:clamp(22px,5vw,32px);line-height:1.15;overflow-wrap:anywhere}
+.store-meta{margin:0;color:var(--muted);font-size:13px}
+.store-about{margin:10px 0 0;color:var(--text);overflow-wrap:anywhere}
+.store-count{margin:0 0 14px;color:var(--ink);font-weight:800}
+.store-link{color:var(--violet);font-weight:800}
+@media(max-width:480px){.store-head{flex-direction:column;align-items:flex-start;padding:16px}.store-logo{width:64px;height:64px}}
