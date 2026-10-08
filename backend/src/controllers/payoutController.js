@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { getPasswordHash } = require('../models/userModel');
 const model = require('../models/payoutModel');
 const rules = require('../utils/payoutRules');
+const directory = require('../utils/bankDirectory');
 const { notifyAdminOfWithdrawal, notifySellerOfSettlement } = require('../utils/payoutAlert');
 
 const STATUSES = ['pending', 'approved', 'processing', 'paid', 'rejected', 'failed'];
@@ -52,7 +53,7 @@ async function myPayouts(req, res) {
     return res.json({
       success: true,
       balances,
-      bank: s.bank ? { bankName: s.bank.bank_name, accountName: s.bank.account_name, accountNumber: rules.maskAccount(s.bank.account_number) } : null,
+      bank: s.bank ? { bankName: s.bank.bank_name, accountName: s.bank.account_name, accountNumber: rules.maskAccount(s.bank.account_number), verified: !!s.bank.bank_code } : null,
       withdrawals: s.withdrawals.map(w => formatWithdrawal(w)),
       rules: r
     });
@@ -62,22 +63,78 @@ async function myPayouts(req, res) {
   }
 }
 
+// Returns an error message, or null when the password is right.
+async function passwordProblem(userId, password) {
+  if (typeof password !== 'string' || !password) return 'Please enter your password to confirm this change.';
+  const hash = await getPasswordHash(userId);
+  if (!hash || !(await bcrypt.compare(password, hash))) return 'Your password is incorrect.';
+  return null;
+}
+
+// GET /api/sellers/me/bank/list: banks for the dropdown. If Paystack cannot answer we say so (200), and the page falls back to typing.
+async function bankList(req, res) {
+  try {
+    return res.json({ success: true, banks: await directory.getBanks() });
+  } catch (e) {
+    console.error('Bank list error:', e && e.message);
+    return res.json({ success: true, banks: [], unavailable: true });
+  }
+}
+
+// POST /api/sellers/me/bank/resolve { bankCode, accountNumber }: shows the account holder's name before saving.
+async function resolveBank(req, res) {
+  try {
+    const b = req.body || {};
+    const bankCode = typeof b.bankCode === 'string' ? b.bankCode.trim() : '';
+    const accountNumber = typeof b.accountNumber === 'string' ? b.accountNumber.trim() : '';
+    if (!/^\d{2,10}$/.test(bankCode)) return bad(res, 'Please choose your bank from the list.');
+    if (!/^\d{10}$/.test(accountNumber)) return bad(res, 'Account number must be exactly 10 digits.');
+
+    const v = await directory.verifyAccount(accountNumber, bankCode);
+    if (!v.ok && v.reason === 'not_found') return bad(res, 'We could not find an account with that number at this bank. Please check the bank and the number.');
+    if (!v.ok) return bad(res, 'We could not check your account right now. Please try again in a few minutes.', 503);
+    return res.json({ success: true, accountName: v.accountName });
+  } catch (e) {
+    console.error('Resolve bank error:', e);
+    return bad(res, 'We could not check your account right now. Please try again in a few minutes.', 503);
+  }
+}
+
 async function saveMyBank(req, res) {
   try {
-    const check = rules.validateBank(req.body);
+    const body = req.body || {};
+    const code = typeof body.bankCode === 'string' ? body.bankCode.trim() : '';
+    let input = body;
+
+    if (code) {
+      // Verified path: the bank comes from our list and the account NAME comes from Paystack, never from the browser.
+      if (!/^\d{2,10}$/.test(code)) return bad(res, 'Bank code must be digits only.');
+      const number = typeof body.accountNumber === 'string' ? body.accountNumber.trim() : '';
+      if (!/^\d{10}$/.test(number)) return bad(res, 'Account number must be exactly 10 digits.');
+      const problem = await passwordProblem(req.user.id, body.password);
+      if (problem) return bad(res, problem);
+
+      const v = await directory.verifyAccount(number, code);
+      if (!v.ok && v.reason === 'not_found') return bad(res, 'We could not find an account with that number at this bank. Please check the bank and the number.');
+      if (!v.ok) return bad(res, 'We could not check your account right now, so it was not saved. Please try again in a few minutes.', 503);
+      const bank = await directory.findBank(code);
+      input = { ...body, bankCode: code, accountNumber: number, accountName: v.accountName, bankName: bank ? bank.name : body.bankName };
+    }
+
+    const check = rules.validateBank(input);
     if (!check.ok) return bad(res, check.message);
 
-    const password = req.body && req.body.password;
-    if (typeof password !== 'string' || !password) return bad(res, 'Please enter your password to confirm this change.');
-    const hash = await getPasswordHash(req.user.id);
-    if (!hash || !(await bcrypt.compare(password, hash))) return bad(res, 'Your password is incorrect.');
+    if (!code) {
+      const problem = await passwordProblem(req.user.id, body.password);
+      if (problem) return bad(res, problem);
+    }
 
     const result = await model.saveBank(req.user.id, check.value);
     if (result.status === 'open_exists') {
       return bad(res, 'You have a withdrawal waiting to be paid. You can change your bank details after it is settled.', 409);
     }
-    log('bank.save', req.user.id, {});
-    return res.json({ success: true, bank: { bankName: check.value.bankName, accountName: check.value.accountName, accountNumber: rules.maskAccount(check.value.accountNumber) } });
+    log('bank.save', req.user.id, { verified: !!code });
+    return res.json({ success: true, verified: !!code, bank: { bankName: check.value.bankName, accountName: check.value.accountName, accountNumber: rules.maskAccount(check.value.accountNumber) } });
   } catch (e) {
     console.error('Save bank error:', e);
     return bad(res, 'Unable to save your bank details', 500);
@@ -189,4 +246,4 @@ async function adminReject(req, res) {
   }
 }
 
-module.exports = { myPayouts, saveMyBank, requestMyWithdrawal, adminList, adminDetail, adminMarkPaid, adminReject };
+module.exports = { myPayouts, bankList, resolveBank, saveMyBank, requestMyWithdrawal, adminList, adminDetail, adminMarkPaid, adminReject };

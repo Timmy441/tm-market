@@ -178,7 +178,7 @@ const INTENTS = [
     id: 'payout_bank',
     patterns: [[/\b(bank|account) (details|number|name)\b/, 4], [/\b(add|save|set|change|update|edit|enter)\b.*\bbank\b/, 4], [/\bbank account\b/, 3]],
     reply: 'Open the \"Earnings\" tab on the Sell page and fill in the bank form: your bank name, your 10-digit account number and the account name exactly as your bank shows it. You must enter your TM Market password to save it. You cannot change bank details while a withdrawal request is still open. ' +
-      'TM Market does not check the account name automatically, so double-check every digit, because payouts go to exactly what you saved. The team may check that the account name matches you or your store before paying. Never share your password in this chat.',
+      'When you choose your bank from the list and type your 10-digit account number, the account name is looked up and shown to you: check that it is YOUR account before you save. If the lookup is not available, the form may ask you to type the name exactly as your bank shows it, so double-check every digit, because payouts go to exactly what you saved. The team may also check that the account name matches you or your store before paying. Never share your password in this chat.',
     suggestions: ['How do I get paid?', 'When is my money available?']
   },
   {

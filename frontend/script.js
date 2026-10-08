@@ -1508,7 +1508,7 @@ function renderOpenStore(root) {
 /* ---------- seller earnings: balances, bank account and withdrawals ---------- */
 function initSellerEarnings(box) {
   const host = $('#sellEarnings');
-  const state = { loaded: false, data: null };
+  const state = { loaded: false, data: null, banks: null, verified: null };
   const naira = n => '\u20A6' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: Number.isInteger(Number(n || 0)) ? 0 : 2, maximumFractionDigits: 2 });
   const STATUS = { pending: ['Waiting for review', 'pending'], approved: ['Approved', 'pending'], processing: ['Processing', 'pending'], paid: ['Paid', 'active'], rejected: ['Not approved', 'sold'], failed: ['Failed', 'sold'] };
   const OPEN = ['pending', 'approved', 'processing'];
@@ -1520,9 +1520,63 @@ function initSellerEarnings(box) {
       state.data = await Loader.run(() => apiRequest('GET', '/api/sellers/me/payouts'), { text: 'Loading your earnings\u2026' });
       state.loaded = true;
       draw();
+      loadBanks().then(wireBankVerify);
     } catch (err) {
       host.innerHTML = `<p class="grid-status is-error">${esc(err.message)}</p>`;
     }
+  }
+
+  // Bank list from the server. If it cannot be loaded, the form keeps working the old way (type the bank and the name).
+  async function loadBanks() {
+    if (state.banks) return;
+    try { state.banks = (await apiRequest('GET', '/api/sellers/me/bank/list')).banks || []; } catch { state.banks = []; }
+  }
+
+  // With the list loaded: choose the bank, type the number, and the account name is looked up (not typed).
+  function wireBankVerify() {
+    const form = $('#epBankForm');
+    if (!form || form.dataset.v === '1' || !state.banks || !state.banks.length) return;
+    form.dataset.v = '1';
+    const list = state.banks;
+    const bankInput = $('#ep-bank'), num = $('#ep-num'), nameInput = $('#ep-name'), note = $('#epBankNote');
+    $('#epBanks').innerHTML = list.map(b => `<option value="${esc(b.name)}"></option>`).join('');
+    nameInput.readOnly = true;
+    nameInput.required = false;
+    nameInput.placeholder = 'Shown after we check your account';
+    const nameLabel = form.querySelector('label[for="ep-name"]');
+    if (nameLabel) nameLabel.textContent = 'Account name (from your bank)';
+    let seq = 0;
+    const err = t => { const e = $('#epBankError'); if (e) { e.textContent = t; e.hidden = !t; } };
+    const pick = () => { const v = bankInput.value.trim().toLowerCase(); return list.find(b => b.name.toLowerCase() === v) || null; };
+
+    async function check() {
+      const mine = ++seq;
+      state.verified = null;
+      nameInput.value = '';
+      note.textContent = '';
+      err('');
+      const bank = pick(), n = num.value.trim();
+      if (!bank || !/^\d{10}$/.test(n)) return;
+      note.textContent = 'Checking your account\u2026';
+      try {
+        const r = await apiRequest('POST', '/api/sellers/me/bank/resolve', { bankCode: bank.code, accountNumber: n });
+        if (mine !== seq) return;
+        state.verified = { code: bank.code, name: bank.name, number: n };
+        nameInput.value = r.accountName;
+        note.textContent = 'Please check that this is YOUR account name before you save.';
+      } catch (ex) {
+        if (mine !== seq) return;
+        note.textContent = '';
+        err(ex.message);
+      }
+    }
+    form._check = check;
+    form._verified = () => {
+      const bank = pick(), n = num.value.trim(), v = state.verified;
+      return v && bank && v.code === bank.code && v.number === n ? v : null;
+    };
+    bankInput.addEventListener('input', check);
+    num.addEventListener('input', check);
   }
 
   function draw() {
@@ -1574,7 +1628,7 @@ function initSellerEarnings(box) {
       </form>` : ''}
 
       <h3 class="ep-title">Bank account</h3>
-      ${bank ? `<p class="ep-small">Current account: <strong>${esc(bank.bankName)}</strong>, ${esc(bank.accountNumber)} (${esc(bank.accountName)})</p>` : ''}
+      ${bank ? `<p class="ep-small">Current account: <strong>${esc(bank.bankName)}</strong>, ${esc(bank.accountNumber)} (${esc(bank.accountName)})${bank.verified ? ' \u00B7 name checked' : ''}</p>` : ''}
       <details class="ep-details" ${bank ? '' : 'open'}>
         <summary>${bank ? 'Change bank details' : 'Add bank details'}</summary>
         <form class="vendor-form ep-form" id="epBankForm" novalidate>
@@ -1586,6 +1640,7 @@ function initSellerEarnings(box) {
           <input id="ep-num" type="text" inputmode="numeric" maxlength="10" pattern="[0-9]*" autocomplete="off" required>
           <label for="ep-name">Account name (exactly as your bank shows it)</label>
           <input id="ep-name" type="text" maxlength="120" autocomplete="off" required>
+          <p class="ep-small" id="epBankNote" role="status" aria-live="polite"></p>
           <label for="ep-pw">Your TM Market password</label>
           <input id="ep-pw" type="password" autocomplete="current-password" required>
           <p class="ep-small">We ask for your password to protect your money. Bank details cannot be changed while a withdrawal is waiting to be paid.</p>
@@ -1625,14 +1680,23 @@ function initSellerEarnings(box) {
     $('#epBankForm').addEventListener('submit', async e => {
       e.preventDefault();
       show('#epBankError', '');
-      const body = { bankName: $('#ep-bank').value, accountNumber: $('#ep-num').value, accountName: $('#ep-name').value, password: $('#ep-pw').value };
+      const form = e.currentTarget;
+      let body = { bankName: $('#ep-bank').value, accountNumber: $('#ep-num').value, accountName: $('#ep-name').value, password: $('#ep-pw').value };
       if (!/^\d{10}$/.test(body.accountNumber.trim())) return show('#epBankError', 'Account number must be exactly 10 digits.');
+      if (form.dataset.v === '1') {
+        // Checked mode: the bank and the account name come from the server, not from what was typed.
+        let v = form._verified();
+        if (!v) { await form._check(); v = form._verified(); }
+        if (!v) return show('#epBankError', $('#epBankError').textContent || 'Please choose your bank from the list so we can check your account.');
+        body = { bankName: v.name, bankCode: v.code, accountNumber: v.number, password: $('#ep-pw').value };
+      }
       try {
         await Loader.run(() => apiRequest('PUT', '/api/sellers/me/bank', body), { text: 'Saving\u2026' });
         toast('Bank details saved', 3000);
         await load();
       } catch (ex) { show('#epBankError', ex.message); }
     });
+    wireBankVerify();
   }
 
   return { show(on) { host.hidden = !on; if (on && !state.loaded) load(); } };

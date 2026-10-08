@@ -292,3 +292,10 @@ test('payout answers work for logged-out visitors too and expose no order data',
 test('confirming delivery is explained honestly', async () => {
   assert.ok(/only once your parcel has really arrived/.test(await reply('how do I confirm delivery')));
 });
+
+test('the bank answer describes the real account-name lookup and still warns about the password', async () => {
+  const t = await reply('how do I add my bank details');
+  assert.ok(/looked up and shown to you/.test(t));
+  assert.ok(!/does not check the account name automatically/.test(t));
+  assert.ok(/Never share your password in this chat/.test(t));
+});

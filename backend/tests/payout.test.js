@@ -402,3 +402,191 @@ test('the Paystack secret key is never used by the payout code (manual payouts f
     assert.ok(!/PAYSTACK_SECRET_KEY|sk_live|sk_test/.test(fs.readFileSync(path.join(__dirname, f), 'utf8')), f);
   }
 });
+
+/* ---------------- bank list and account-name check (Task F1; no money moves) ---------------- */
+
+const directory = require('../src/utils/bankDirectory');
+const realFetch = global.fetch;
+const realNow = Date.now;
+
+// Fake Paystack: handler(url, opts, callNumber) -> { status, body }.
+function fakePaystack(handler) {
+  const seen = [];
+  global.fetch = async (url, opts) => {
+    seen.push({ url: String(url), opts });
+    const r = await handler(String(url), opts, seen.length);
+    return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body };
+  };
+  return seen;
+}
+async function withPaystack(handler, fn) {
+  const saved = process.env.PAYSTACK_SECRET_KEY;
+  process.env.PAYSTACK_SECRET_KEY = 'sk_test_unit';
+  directory.resetCache();
+  const seen = fakePaystack(handler);
+  try { return await fn(seen); }
+  finally { global.fetch = realFetch; Date.now = realNow; directory.resetCache(); if (saved === undefined) delete process.env.PAYSTACK_SECRET_KEY; else process.env.PAYSTACK_SECRET_KEY = saved; }
+}
+const ok = (data, meta) => ({ status: 200, body: { status: true, message: 'ok', data, meta } });
+
+test('the bank list follows Paystack cursor pages, drops bad entries, sorts and caches', async () => {
+  await withPaystack((url, o, n) => n === 1
+    ? ok([{ name: 'Zenith Bank', code: '057', active: true }, { name: 'Access Bank', code: '044' }, { name: 'Old Bank', code: '999', is_deleted: true }], { next: 'CUR2' })
+    : ok([{ name: 'Access Bank', code: '044' }, { name: 'Gone MFB', code: '111', active: false }, { name: 'No code', code: 'abc' }, { name: 'GTBank', code: '058' }], { next: null }),
+  async seen => {
+    const banks = await directory.getBanks();
+    assert.deepStrictEqual(banks, [{ name: 'Access Bank', code: '044' }, { name: 'GTBank', code: '058' }, { name: 'Zenith Bank', code: '057' }]);
+    assert.strictEqual(seen.length, 2);
+    assert.ok(/country=nigeria/.test(seen[0].url) && /use_cursor=true/.test(seen[0].url));
+    assert.ok(/next=CUR2/.test(seen[1].url));
+    await directory.getBanks();
+    assert.strictEqual(seen.length, 2, 'the second call must come from the cache');
+    assert.strictEqual((await directory.findBank('058')).name, 'GTBank');
+    assert.strictEqual(await directory.findBank('000'), null);
+  });
+});
+
+test('the bank list never loops forever and keeps the last good list when Paystack later fails', async () => {
+  await withPaystack((url, o, n) => ok([{ name: `Bank ${n}`, code: String(100 + n) }], { next: 'AGAIN' }), async seen => {
+    const banks = await directory.getBanks();
+    assert.strictEqual(seen.length, 10, 'hard cap of 10 pages');
+    assert.strictEqual(banks.length, 10);
+  });
+  await withPaystack((url, o, n) => n === 1 ? ok([{ name: 'Access Bank', code: '044' }], {}) : { status: 500, body: null }, async () => {
+    assert.strictEqual((await directory.getBanks()).length, 1);
+    Date.now = () => realNow() + 7 * 60 * 60 * 1000;     // cache has expired
+    assert.deepStrictEqual(await directory.getBanks(), [{ name: 'Access Bank', code: '044' }]);   // stale list beats nothing
+  });
+  await withPaystack(() => ({ status: 500, body: null }), async () => {
+    await assert.rejects(() => directory.getBanks());     // never had a list: caller must handle it
+  });
+});
+
+test('account-name check: found, not found, and "could not check" are kept apart', async () => {
+  await withPaystack(() => ok({ account_number: '0123456789', account_name: '  ADA   OBI ' }), async seen => {
+    assert.deepStrictEqual(await directory.verifyAccount('0123456789', '058'), { ok: true, accountName: 'ADA OBI' });
+    assert.ok(/account_number=0123456789/.test(seen[0].url) && /bank_code=058/.test(seen[0].url));
+    assert.strictEqual(seen[0].opts.headers.Authorization, 'Bearer sk_test_unit');
+  });
+  for (const [status, reason] of [[422, 'not_found'], [400, 'not_found'], [500, 'unavailable'], [403, 'unavailable'], [429, 'unavailable'], [401, 'unavailable']]) {
+    await withPaystack(() => ({ status, body: { status: false, message: 'x' } }), async () => {
+      assert.deepStrictEqual(await directory.verifyAccount('0123456789', '058'), { ok: false, reason }, `HTTP ${status}`);
+    });
+  }
+  await withPaystack(() => ok({ account_name: '' }), async () => assert.strictEqual((await directory.verifyAccount('0123456789', '058')).reason, 'unavailable'));
+  await withPaystack(() => { throw new Error('network down'); }, async () => assert.strictEqual((await directory.verifyAccount('0123456789', '058')).reason, 'unavailable'));
+  delete process.env.PAYSTACK_SECRET_KEY;
+  assert.strictEqual((await directory.verifyAccount('0123456789', '058')).reason, 'unavailable');   // no key: never calls Paystack
+});
+
+test('the bank list route answers 200 with an "unavailable" flag instead of an error', async () => {
+  const savedGet = directory.getBanks;
+  try {
+    directory.getBanks = async () => [{ name: 'GTBank', code: '058' }];
+    let r = await call(c.bankList);
+    assert.deepStrictEqual(r.body, { success: true, banks: [{ name: 'GTBank', code: '058' }] });
+    directory.getBanks = async () => { throw new Error('paystack down'); };
+    r = await call(c.bankList);
+    assert.strictEqual(r.code, 200);
+    assert.deepStrictEqual(r.body, { success: true, banks: [], unavailable: true });
+  } finally { directory.getBanks = savedGet; }
+});
+
+test('resolving an account refuses bad input, shows the name, and reports problems without a 401', async () => {
+  const saved = directory.verifyAccount;
+  let asked = 0;
+  try {
+    directory.verifyAccount = async () => { asked++; return { ok: true, accountName: 'ADA OBI' }; };
+    for (const body of [{}, { bankCode: '058' }, { bankCode: '058', accountNumber: '123' }, { bankCode: 'x', accountNumber: '0123456789' }, { bankCode: '058', accountNumber: 123456789012 }]) {
+      assert.strictEqual((await call(c.resolveBank, { body })).code, 400, JSON.stringify(body));
+    }
+    assert.strictEqual(asked, 0, 'bad input must never reach Paystack');
+    const good = await call(c.resolveBank, { body: { bankCode: '058', accountNumber: '0123456789' } });
+    assert.deepStrictEqual(good.body, { success: true, accountName: 'ADA OBI' });
+    directory.verifyAccount = async () => ({ ok: false, reason: 'not_found' });
+    assert.strictEqual((await call(c.resolveBank, { body: { bankCode: '058', accountNumber: '0123456789' } })).code, 400);
+    directory.verifyAccount = async () => ({ ok: false, reason: 'unavailable' });
+    assert.strictEqual((await call(c.resolveBank, { body: { bankCode: '058', accountNumber: '0123456789' } })).code, 503);
+  } finally { directory.verifyAccount = saved; }
+});
+
+test('saving a verified bank: the name comes from Paystack, the bank name from our list, never from the browser', async () => {
+  const savedVerify = directory.verifyAccount, savedFind = directory.findBank;
+  let verifyCalls = 0;
+  try {
+    resetCalls();
+    directory.verifyAccount = async () => { verifyCalls++; return { ok: true, accountName: 'ADA OBI' }; };
+    directory.findBank = async code => (code === '058' ? { name: 'Guaranty Trust Bank', code } : null);
+    const body = { bankName: 'Fake Bank', bankCode: '058', accountNumber: '0123456789', accountName: 'Somebody Else', password: 'Correct-Pass-1' };
+
+    let r = await call(c.saveMyBank, { body: { ...body, password: 'wrong' } });
+    assert.strictEqual(r.code, 400);
+    assert.strictEqual(verifyCalls, 0, 'a wrong password must not cost a Paystack call');
+    assert.strictEqual(calls.saveBank, null);
+
+    r = await call(c.saveMyBank, { body });
+    assert.strictEqual(r.code, 200);
+    assert.strictEqual(r.body.verified, true);
+    assert.deepStrictEqual(calls.saveBank.bank, { bankName: 'Guaranty Trust Bank', bankCode: '058', accountNumber: '0123456789', accountName: 'ADA OBI' });
+    assert.strictEqual(r.body.bank.accountName, 'ADA OBI');
+    assert.strictEqual(r.body.bank.accountNumber, '******6789');
+    assert.ok(!JSON.stringify(r.body).includes('0123456789'));
+
+    for (const bad of [{ accountNumber: '123' }, { bankCode: 'x1' }]) {
+      resetCalls();
+      assert.strictEqual((await call(c.saveMyBank, { body: { ...body, ...bad } })).code, 400);
+      assert.strictEqual(calls.saveBank, null);
+    }
+  } finally { directory.verifyAccount = savedVerify; directory.findBank = savedFind; }
+});
+
+test('a verified save is refused (and nothing stored) when the account is not found or cannot be checked', async () => {
+  const saved = directory.verifyAccount;
+  try {
+    const body = { bankName: 'Guaranty Trust Bank', bankCode: '058', accountNumber: '0123456789', password: 'Correct-Pass-1' };
+    resetCalls();
+    directory.verifyAccount = async () => ({ ok: false, reason: 'not_found' });
+    assert.strictEqual((await call(c.saveMyBank, { body })).code, 400);
+    directory.verifyAccount = async () => ({ ok: false, reason: 'unavailable' });
+    const r = await call(c.saveMyBank, { body });
+    assert.strictEqual(r.code, 503);
+    assert.ok(/not saved/.test(r.body.message));
+    assert.strictEqual(calls.saveBank, null);
+    directory.verifyAccount = async () => ({ ok: true, accountName: 'ADA OBI' });
+    fake.saveBankResult = { status: 'open_exists' };
+    assert.strictEqual((await call(c.saveMyBank, { body })).code, 409);
+  } finally { directory.verifyAccount = saved; fake.saveBankResult = { status: 'ok' }; }
+});
+
+test('saving without a bank code still works the old way and is reported as not verified', async () => {
+  resetCalls();
+  const r = await call(c.saveMyBank, { body: { bankName: 'GTBank', accountNumber: '0123456789', accountName: 'Ada Obi', password: 'Correct-Pass-1' } });
+  assert.strictEqual(r.code, 200);
+  assert.strictEqual(r.body.verified, false);
+  assert.strictEqual(calls.saveBank.bank.bankCode, null);
+});
+
+test('the seller summary says whether the saved account was verified, without leaking the full number', async () => {
+  fake.summary = { balances: { pendingBalance: 0, availableBalance: 0, withdrawable: 0, totalEarned: 0, inReview: 0, withdrawn: 0 }, bank: BANK, withdrawals: [] };
+  let r = await call(c.myPayouts);
+  assert.strictEqual(r.body.bank.verified, true);
+  fake.summary = { ...fake.summary, bank: { ...BANK, bank_code: null } };
+  r = await call(c.myPayouts);
+  assert.strictEqual(r.body.bank.verified, false);
+  assert.ok(!JSON.stringify(r.body).includes('0123456789'));
+});
+
+test('the new bank routes need a logged-in seller and sit under the payout rate limit', () => {
+  const routes = fs.readFileSync(path.join(__dirname, '../src/routes/sellerRoutes.js'), 'utf8');
+  assert.ok(/router\.get\('\/me\/bank\/list', authenticateToken, requireSeller, payouts\.bankList\)/.test(routes));
+  assert.ok(/router\.post\('\/me\/bank\/resolve', authenticateToken, requireSeller, payouts\.resolveBank\)/.test(routes));
+  const server = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
+  assert.ok(server.indexOf("app.use('/api/sellers/me/bank', payoutLimiter)") > -1);
+  assert.ok(server.indexOf("app.use('/api/sellers/me/bank', payoutLimiter)") < server.indexOf("app.use('/api/sellers', sellerRoutes)"));
+});
+
+test('no Paystack key appears in the new bank code or its answers', () => {
+  for (const f of ['../src/controllers/payoutController.js', '../src/utils/bankDirectory.js']) {
+    assert.ok(!/sk_live|sk_test/.test(fs.readFileSync(path.join(__dirname, f), 'utf8')), f);
+  }
+});

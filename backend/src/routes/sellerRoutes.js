@@ -27,6 +27,8 @@ router.put('/me/orders/:id/delivery-window', authenticateToken, requireSeller, o
 
 // Earnings, bank details and withdrawals (the backend checks the seller role in the database).
 router.get('/me/payouts', authenticateToken, requireSeller, payouts.myPayouts);
+router.get('/me/bank/list', authenticateToken, requireSeller, payouts.bankList);
+router.post('/me/bank/resolve', authenticateToken, requireSeller, payouts.resolveBank);
 router.put('/me/bank', authenticateToken, requireSeller, payouts.saveMyBank);
 router.post('/me/withdrawals', authenticateToken, requireSeller, payouts.requestMyWithdrawal);
 
