@@ -174,3 +174,121 @@ test('vague or off-topic questions fall back instead of guessing', () => {
     assert.strictEqual(id(q), null, q);
   }
 });
+
+// ---------- Payout, fee and shipping answers (Task D) ----------
+const { INTENTS } = require('../src/utils/chatFaq');
+const SETTINGS = ['PLATFORM_FEE_PERCENT', 'PAYOUT_HOLD_DAYS', 'MIN_WITHDRAWAL'];
+async function withSettings(values, fn) {
+  const saved = {};
+  for (const k of SETTINGS) { saved[k] = process.env[k]; delete process.env[k]; }
+  Object.assign(process.env, values);
+  try { return await fn(); }
+  finally { for (const k of SETTINGS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
+}
+const reply = async q => (await ask(q, { id: 1 })).body.reply;
+
+test('payout questions reach the new payout answers', () => {
+  const cases = {
+    'how do I get paid': 'get_paid',
+    'how do I withdraw my money': 'get_paid',
+    'how do I request a withdrawal': 'get_paid',
+    'where are my earnings': 'get_paid',
+    'what is the platform fee': 'payout_fee',
+    'how much commission do you take': 'payout_fee',
+    'what percentage do you charge sellers': 'payout_fee',
+    'when is my money available': 'payout_timing',
+    'why is my balance pending': 'payout_timing',
+    'when will I get paid': 'payout_timing',
+    'how long does a payout take': 'payout_timing',
+    'how do I add my bank details': 'payout_bank',
+    'where do I put my account number': 'payout_bank',
+    'who pays for shipping': 'shipping_cost',
+    'is there a delivery fee': 'shipping_cost',
+    'how much is delivery': 'shipping_cost',
+    'can I pay the seller directly': 'pay_outside',
+    'is there cash on delivery': 'pay_outside',
+    'the seller asked me to send money to his account': 'pay_outside'
+  };
+  for (const [q, want] of Object.entries(cases)) assert.strictEqual(id(q), want, `"${q}" matched ${id(q)}, expected ${want}`);
+});
+
+test('older questions still go where they went before the payout intents were added', () => {
+  const cases = { 'how do I pay': 'checkout', 'update my delivery address': 'address', 'how do I get paid?': 'get_paid',
+    'when will my order arrive': 'delivery_time', 'I want a refund': 'refund', 'how can I contact the seller': 'contact_seller', 'change my phone number': 'change_phone' };
+  for (const [q, want] of Object.entries(cases)) assert.strictEqual(id(q), want, `"${q}" matched ${id(q)}, expected ${want}`);
+});
+
+test('every quick-reply button on the payout answers leads to the answer it promises', () => {
+  const want = { 'Platform fee': 'payout_fee', 'When is my money available?': 'payout_timing', 'Add bank details': 'payout_bank',
+    'How do I get paid?': 'get_paid', 'Shipping fees': 'shipping_cost', 'How do I pay?': 'checkout', 'Track my order': 'order_status', 'Report a problem': 'report_problem' };
+  for (const intentId of ['get_paid', 'payout_fee', 'payout_timing', 'payout_bank', 'shipping_cost', 'pay_outside']) {
+    for (const s of INTENTS.find(i => i.id === intentId).suggestions) {
+      assert.ok(want[s], `unexpected suggestion "${s}"`);
+      assert.strictEqual(id(s), want[s], `button "${s}" matched ${id(s)}`);
+    }
+  }
+});
+
+test('the payout answer states the real current rules and the old "no payout button" text is gone', async () => {
+  await withSettings({ PLATFORM_FEE_PERCENT: '5' }, async () => {
+    const r = await ask('how do I get paid', { id: 1 });
+    const t = r.body.reply;
+    assert.ok(!/no automatic payout button/i.test(t));
+    assert.ok(t.includes('5%'), 'fee');
+    assert.ok(/PENDING/.test(t) && /received this order/.test(t) && /marks the order as delivered/.test(t), 'pending until delivery');
+    assert.ok(t.includes('3 days after delivery'), 'hold days');
+    assert.ok(t.includes('\u20A61,000'), 'minimum');
+    assert.ok(/only one withdrawal request/.test(t), 'one at a time');
+    assert.ok(/password/.test(t), 'bank needs password');
+    assert.ok(/manually, not automatically/.test(t) && /email/.test(t), 'manual payment + email');
+    assert.ok(/Shipping is not charged online/.test(t) && /outside TM Market/.test(t));
+    assert.ok(r.body.support, 'support button shown');
+  });
+});
+
+test('payout answers follow the real settings, and invalid settings fall back like the payout code does', async () => {
+  await withSettings({ PLATFORM_FEE_PERCENT: '7.5', PAYOUT_HOLD_DAYS: '7', MIN_WITHDRAWAL: '2000' }, async () => {
+    const t = await reply('how do I get paid');
+    assert.ok(t.includes('7.5%') && t.includes('7 days after delivery') && t.includes('\u20A62,000'));
+    assert.ok(!t.includes('5%.') && !t.includes('\u20A61,000'));
+    assert.ok((await reply('what is the platform fee')).includes('keeps \u20A6750 and you receive \u20A69,250'));
+  });
+  await withSettings({ PAYOUT_HOLD_DAYS: '1' }, async () => assert.ok((await reply('when is my money available')).includes('1 day after delivery')));
+  await withSettings({ PAYOUT_HOLD_DAYS: '0' }, async () => assert.ok((await reply('when is my money available')).includes('as soon as delivery is confirmed')));
+  await withSettings({ PLATFORM_FEE_PERCENT: 'abc', PAYOUT_HOLD_DAYS: '99', MIN_WITHDRAWAL: '-5' }, async () => {
+    const t = await reply('how do I get paid');
+    assert.ok(t.includes('10%') && t.includes('3 days') && t.includes('\u20A61,000'));   // code defaults
+  });
+});
+
+test('payout, fee, bank and shipping answers never claim an action was done and never ask for secrets', async () => {
+  for (const q of ['how do I get paid', 'what is the platform fee', 'when is my money available', 'how do I add my bank details', 'who pays for shipping', 'can I pay the seller directly']) {
+    const t = await reply(q);
+    assert.ok(!/(has|have|had) been (paid|sent|approved|released|saved)|i (have|ve) (paid|sent|approved|released|saved)/i.test(t), q);
+    assert.ok(!/within \d+ (hour|day|minute)/i.test(t), `${q} promises a time`);
+    assert.ok(!/(?<!never )(send|share|type|enter) (me )?your (password|pin|otp)/i.test(t), q);   // a warning ("never share...") is fine, a request is not
+    assert.ok(!/sk_(live|test)_/.test(t), q);
+  }
+  assert.ok(/cannot give an exact time/.test(await reply('when is my money available')));
+  assert.ok(/Never share your password in this chat/.test(await reply('how do I add my bank details')));
+});
+
+test('shipping and outside-payment answers match the checkout notice', async () => {
+  const ship = await reply('who pays for shipping');
+  assert.ok(/not included/.test(ship) && /not charged online/.test(ship));
+  assert.ok(/agree the delivery cost and the delivery method directly with the seller/.test(ship));
+  assert.ok(/only after the item has really arrived/.test(ship));
+  const out = await ask('can I pay the seller directly', { id: 1 });
+  assert.ok(/only through TM Market/.test(out.body.reply) && /no pay on delivery/.test(out.body.reply));
+  assert.ok(out.body.support);
+});
+
+test('payout answers work for logged-out visitors too and expose no order data', async () => {
+  const r = await ask('how do I get paid');
+  assert.ok(r.body.reply.includes('PENDING'));
+  assert.ok(!r.body.reply.includes('TM-2026'));
+});
+
+test('confirming delivery is explained honestly', async () => {
+  assert.ok(/only once your parcel has really arrived/.test(await reply('how do I confirm delivery')));
+});

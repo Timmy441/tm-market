@@ -1,6 +1,8 @@
 // TM Assistant: written FAQ + simple keyword matching. No AI model, no external service, no cost.
 // Every answer below describes what the site really does today. If the site changes, change the answer here.
 
+const { feePercent, holdDays, minWithdrawal, orderFee } = require('./payoutRules');
+
 // The ONLY support channels. The chat window never shows anything that is not listed here.
 const SUPPORT = {
   emails: ['tmmarketsupport@gmail.com', 'support@gmail.com'],
@@ -10,6 +12,21 @@ const SUPPORT = {
 const SUPPORT_LINE =
   `You can reach the TM Market team by email at ${SUPPORT.emails.join(' or ')}, ` +
   `or on WhatsApp at ${SUPPORT.whatsapp.display}.`;
+
+// Payout answers read the SAME settings the payout code uses (PLATFORM_FEE_PERCENT, PAYOUT_HOLD_DAYS, MIN_WITHDRAWAL),
+// so the chat never states a number that differs from the real rules.
+const naira = n => `\u20A6${Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
+
+function payoutFacts() {
+  const fee = feePercent();
+  const days = holdDays();
+  return {
+    fee,
+    min: naira(minWithdrawal()),
+    available: days === 0 ? 'as soon as delivery is confirmed' : `${days} day${days === 1 ? '' : 's'} after delivery is confirmed`,
+    example: `on a ${naira(10000)} item TM Market keeps ${naira(orderFee(10000, fee))} and you receive ${naira(10000 - orderFee(10000, fee))}`
+  };
+}
 
 const UNKNOWN_REPLY = "I'm not sure about that. Please contact support.";
 
@@ -118,14 +135,71 @@ const INTENTS = [
   },
   {
     id: 'get_paid',
-    patterns: [[/\b(get paid|payout|payouts|my money|withdraw|receive payment|seller payment)\b/, 4]],
-    reply: `Seller payouts are currently handled manually by the TM Market team and there is no automatic payout button yet. For questions about a payout, please contact support. ${SUPPORT_LINE}`,
-    support: true
+    patterns: [[/\b(get paid|payout|payouts|my money|withdraw|withdrawal|withdrawals|cash ?out|earnings|receive payment|seller payment)\b/, 4]],
+    get reply() {
+      const f = payoutFacts();
+      return `Here is how seller payouts work on TM Market (these are the current rules and they may change):\n\n` +
+        `1. When a buyer pays for your item, your earnings show as PENDING in the \"Earnings\" tab on the Sell page.\n` +
+        `2. They stay pending until delivery is confirmed: the buyer taps \"I have received this order\", or the TM Market team marks the order as delivered.\n` +
+        `3. They become AVAILABLE ${f.available}.\n` +
+        `4. Save your bank details in the Earnings tab (your password is needed), then request a withdrawal. The minimum is ${f.min} and you can have only one withdrawal request open at a time.\n` +
+        `5. TM Market pays withdrawals manually, not automatically. You get an email when a request is paid or not approved.\n\n` +
+        `TM Market keeps ${f.fee}% of each item's price. Shipping is not charged online, so agree it directly with the buyer. Never accept payment outside TM Market.\n\n` +
+        `For a question about a specific payout, contact support. ${SUPPORT_LINE}`;
+    },
+    support: true,
+    suggestions: ['Platform fee', 'When is my money available?', 'Add bank details']
+  },
+  {
+    id: 'payout_fee',
+    patterns: [[/\bplatform fee\b/, 5], [/\bcommission\b/, 5], [/\b(seller|selling|service|listing|withdrawal)\b.*\b(fee|fees|charge|charges)\b/, 4], [/\bwhat (percent|percentage)\b/, 4], [/\b(do|does|will) (you|tm market|tm)\b.*\b(take|charge|deduct|keep)\b/, 4], [/\bhow much\b.*\b(take|keep|deduct)\b/, 4]],
+    get reply() {
+      const f = payoutFacts();
+      return `TM Market keeps ${f.fee}% of the item price on each order and you receive the rest. For example, ${f.example}. ` +
+        `The fee is taken from the item price only, because shipping is not charged online. TM Market pays the Paystack payment fee, so it is not taken from you. ` +
+        `The rate is saved with each order when it is paid, so if the rate ever changes, orders that are already paid keep the rate they had. These are the current rules.`;
+    },
+    suggestions: ['How do I get paid?', 'Shipping fees']
+  },
+  {
+    id: 'payout_timing',
+    patterns: [[/\b(pending|available) (balance|money|earnings|amount)\b/, 4], [/\bmoney\b.*\bavailable\b/, 5], [/\b(balance|earnings)\b.*\bpending\b/, 4], [/\bwhy\b.*\b(pending|not available)\b/, 3], [/\bwhen\b.*\b(get paid|will i be paid|can i withdraw)\b/, 5], [/\bhow long\b.*\b(payout|withdraw|withdrawal|paid)\b/, 5], [/\bhold(ing)? (period|days?)\b/, 4]],
+    get reply() {
+      const f = payoutFacts();
+      return `Your earnings from an order stay PENDING until delivery is confirmed: the buyer taps \"I have received this order\" under \"My orders\", or the TM Market team marks the order as delivered. ` +
+        `They then become AVAILABLE ${f.available}, and only available money can be withdrawn. You can see Pending and Available in the Earnings tab on the Sell page. ` +
+        `If the buyer has received the item but has not confirmed, ask them to tap the button; if it is still stuck, contact support with the order number. ` +
+        `After you request a withdrawal, TM Market pays it manually, so I cannot give an exact time. You will get an email when it is paid or not approved.`;
+    },
+    support: true,
+    suggestions: ['How do I get paid?', 'Add bank details']
+  },
+  {
+    id: 'payout_bank',
+    patterns: [[/\b(bank|account) (details|number|name)\b/, 4], [/\b(add|save|set|change|update|edit|enter)\b.*\bbank\b/, 4], [/\bbank account\b/, 3]],
+    reply: 'Open the \"Earnings\" tab on the Sell page and fill in the bank form: your bank name, your 10-digit account number and the account name exactly as your bank shows it. You must enter your TM Market password to save it. You cannot change bank details while a withdrawal request is still open. ' +
+      'TM Market does not check the account name automatically, so double-check every digit, because payouts go to exactly what you saved. The team may check that the account name matches you or your store before paying. Never share your password in this chat.',
+    suggestions: ['How do I get paid?', 'When is my money available?']
+  },
+  {
+    id: 'shipping_cost',
+    patterns: [[/\b(shipping|delivery|transport|postage)\b.*\b(fee|fees|cost|costs|charge|charges|price)\b/, 5], [/\b(charge|charged|pay)\b.*\b(for )?(shipping|delivery)\b/, 5], [/\bwho pays\b.*\b(shipping|delivery)\b/, 5], [/\bhow much\b.*\b(shipping|delivery)\b/, 5]],
+    reply: 'Shipping is not included in the price on TM Market and it is not charged online. Before you pay, agree the delivery cost and the delivery method directly with the seller (tap \"Chat with seller on WhatsApp\" on the product page). Pay for your items only through TM Market, and tap \"I have received this order\" only after the item has really arrived. ' +
+      'If you are a seller, agree the delivery cost with the buyer before you dispatch; the buyer\'s phone number is on the order.',
+    suggestions: ['How do I pay?', 'Track my order']
+  },
+  {
+    id: 'pay_outside',
+    patterns: [[/\b(pay|paid|payment|transfer|send)\b.*\b(outside|directly|offline)\b/, 4], [/\b(cash on delivery|pay on delivery|pay after delivery|pay when)\b/, 4], [/\boutside (tm|the (site|app|platform|website))\b/, 4], [/\b(send|transfer)\b.*\bmoney\b.*\bseller\b/, 4], [/\bseller\b.*\b(send|transfer)\b.*\bmoney\b/, 4], [/\bsellers? (bank )?account\b/, 4]],
+    reply: 'Please pay only through TM Market checkout (Paystack). Checkout is online payment only, so there is no pay on delivery. TM Market cannot confirm, track or help with payments made outside the site, and they are not recorded for seller payouts. ' +
+      'If a seller asks you to pay outside TM Market, do not pay, and report it to support.',
+    support: true,
+    suggestions: ['How do I pay?', 'Report a problem']
   },
   {
     id: 'sell',
     patterns: [[/\b(sell|selling)\b/, 2], [/\b(seller|vendor|store)\b/, 1], [/\b(be|become) a (seller|vendor)\b/, 3], [/\bopen (a |my )?(store|shop)\b/, 4]],
-    reply: 'To sell on TM Market, log in, go to the "Sell" page and open your store by entering your store name, location and an optional WhatsApp number. After that you can add products, manage your listings, and see paid orders for your products in the "Orders" tab, where you can set delivery dates and mark orders as shipped.',
+    reply: 'To sell on TM Market, log in, go to the "Sell" page and open your store by entering your store name, location and an optional WhatsApp number. After that you can add products, manage your listings, and see paid orders for your products in the "Orders" tab, where you can set delivery dates and mark orders as shipped, and your earnings and withdrawals in the "Earnings" tab.',
     suggestions: ['How do I add a product?', 'How do I get paid?']
   },
   {
@@ -163,7 +237,7 @@ const INTENTS = [
   {
     id: 'confirm_delivered',
     patterns: [[/\b(received|got) (my|the) (order|item|package|parcel)\b/, 4], [/\bconfirm\b.*\bdeliver/, 4], [/\bmark\b.*\bdelivered\b/, 4]],
-    reply: 'When your order has been shipped, a button "I have received this order" appears on it under "My orders" on the home page. Tap it once your parcel has arrived to confirm delivery.',
+    reply: 'When your order has been shipped, a button "I have received this order" appears on it under "My orders" on the home page. Tap it only once your parcel has really arrived, because confirming delivery is what lets the seller be paid.',
     suggestions: ['Track my order']
   },
   {
