@@ -2,6 +2,7 @@ const express = require('express');
 
 const c = require('../controllers/sellerController');
 const orders = require('../controllers/orderController');
+const payouts = require('../controllers/payoutController');
 const { authenticateToken, requireSeller } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -23,5 +24,10 @@ router.delete('/me/products/:id', authenticateToken, requireSeller, c.deleteMyPr
 router.get('/me/orders', authenticateToken, requireSeller, orders.sellerOrders);
 router.post('/me/orders/:id/status', authenticateToken, requireSeller, orders.sellerUpdateStatus);
 router.put('/me/orders/:id/delivery-window', authenticateToken, requireSeller, orders.sellerSetDeliveryWindow);
+
+// Earnings, bank details and withdrawals (the backend checks the seller role in the database).
+router.get('/me/payouts', authenticateToken, requireSeller, payouts.myPayouts);
+router.put('/me/bank', authenticateToken, requireSeller, payouts.saveMyBank);
+router.post('/me/withdrawals', authenticateToken, requireSeller, payouts.requestMyWithdrawal);
 
 module.exports = router;

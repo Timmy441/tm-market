@@ -72,6 +72,15 @@ const orderLimiter = rateLimit({
   message: { success: false, message: 'Too many requests. Please slow down.' }
 });
 
+// Bank details and withdrawals handle money, so they get a tighter limit.
+const payoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many attempts. Please try again in a few minutes.' }
+});
+
 const chatLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 60,
@@ -91,6 +100,8 @@ app.use('/api/reset-password', authLimiter);
 app.use('/api', authRoutes);
 app.get('/api/categories', getCategories);
 app.use('/api/products', productRoutes);
+app.use('/api/sellers/me/bank', payoutLimiter);
+app.use('/api/sellers/me/withdrawals', payoutLimiter);
 app.use('/api/sellers', sellerRoutes);
 app.use('/api/admin', adminLimiter, adminRoutes);
 app.use('/api/orders', orderLimiter, orderRoutes);

@@ -1,6 +1,7 @@
 const express = require('express');
 
 const c = require('../controllers/adminController');
+const payouts = require('../controllers/payoutController');
 const { authenticateToken, requireAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -25,5 +26,10 @@ router.get('/orders', c.orders);
 router.get('/orders/:id', c.orderDetail);
 router.post('/orders/:id/status', c.changeOrderStatus);
 router.put('/orders/:id/delivery-window', c.changeOrderWindow);
+
+router.get('/withdrawals', payouts.adminList);
+router.get('/withdrawals/:id', payouts.adminDetail);
+router.post('/withdrawals/:id/paid', payouts.adminMarkPaid);
+router.post('/withdrawals/:id/reject', payouts.adminReject);
 
 module.exports = router;
