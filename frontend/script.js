@@ -1221,6 +1221,11 @@ function initStorefront() {
     }
   });
 
+  $("#themeBtn")?.addEventListener("click", () => {
+    document.body.classList.toggle("dark");
+    localStorage.setItem("tm-market-dark", document.body.classList.contains("dark"));
+  });
+
   loadProducts(true);
   renderCart();
   updateResumePaymentsButton();
@@ -2016,12 +2021,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("tm-market-dark") === "true") document.body.classList.add("dark");
 
   renderSharedHeader();
-  const themeButton = $("#themeBtn");
-  if (themeButton) {
-    const isDark = document.body.classList.contains("dark");
-    themeButton.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
-    themeButton.setAttribute("title", isDark ? "Switch to light theme" : "Switch to dark theme");
-  }
   buildAuthModal();
   // Arrived from a password-reset email: take the token out of the address bar and ask for a new password.
   const resetMatch = /^#reset=([a-f0-9]{64})$/.exec(location.hash);
@@ -2035,18 +2034,6 @@ document.addEventListener("DOMContentLoaded", () => {
   updateBagCount();
   initChatWidget();
   initBankNotice();
-
-  // Global theme toggle: delegated so touch devices and dynamically rendered headers use the same handler.
-  document.addEventListener('click', e => {
-    const theme = e.target.closest('#themeBtn');
-    if (!theme) return;
-    e.preventDefault();
-    const isDark = !document.body.classList.contains('dark');
-    document.body.classList.toggle('dark', isDark);
-    localStorage.setItem('tm-market-dark', String(isDark));
-    theme.setAttribute('aria-label', isDark ? 'Switch to light theme' : 'Switch to dark theme');
-    theme.setAttribute('title', isDark ? 'Switch to light theme' : 'Switch to dark theme');
-  }, true);
 
   // Header/account clicks (work on every page)
   document.addEventListener('click', e => {
