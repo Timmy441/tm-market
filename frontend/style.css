@@ -283,3 +283,4 @@ button{padding:0}
 .ep-form{margin-top:10px;padding:20px}.ep-form .btn-ghost-sm{margin-top:10px}
 .ep-details{margin-top:8px}.ep-details summary{cursor:pointer;color:var(--violet);font-weight:800;padding:8px 0}
 .ep-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--card)}.ep-row div{display:flex;flex-direction:column;gap:2px;min-width:0}.ep-row strong{color:var(--ink)}.ep-row span:not(.sell-badge){color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.ship-note{margin:18px 0 0;padding:14px 16px;border:1px solid var(--gold);border-radius:14px;background:color-mix(in srgb,var(--gold) 12%,transparent);color:var(--ink);font-size:13.5px;line-height:1.5}.ship-note strong{display:block;margin-bottom:6px}.ship-note ul{margin:0;padding-left:18px;list-style:disc}.ship-note li+li{margin-top:4px}
