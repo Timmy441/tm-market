@@ -805,7 +805,7 @@ function initStorefront() {
       const line = deliveryLine(o);
       const box = el('div', { class: 'order-window' + (line.late ? ' is-late' : '') }, el('strong', { text: line.text }));
       if (line.late) {
-        box.append(el('small', { text: 'This is taking longer than expected. Please contact support: tmmarketsupport@gmail.com' }));
+        box.append(el('small', { text: 'This is taking longer than expected. Please contact support: support@gmail.com' }));
       }
       const note = [...(o.events || [])].reverse().find(e => e.note && !AUTO_NOTE.test(e.note));
       if (note) box.append(el('small', { text: `Note: ${note.note}` }));
@@ -2033,6 +2033,7 @@ document.addEventListener("DOMContentLoaded", () => {
   updateAuthUI();
   updateBagCount();
   initChatWidget();
+  initBankNotice();
 
   // Header/account clicks (work on every page)
   document.addEventListener('click', e => {
@@ -2097,9 +2098,21 @@ document.addEventListener("DOMContentLoaded", () => {
 const CHAT_TIMEOUT = 15000;   // ms; the chat can never hang forever
 // Used ONLY if the backend cannot be reached for the greeting. Same channels as the backend list.
 const CHAT_FALLBACK_SUPPORT = {
-  emails: ['tmmarketsupport@gmail.com', 'support@gmail.com'],
+  emails: ['support@gmail.com'],
   whatsapp: { display: '+234 708 604 9886', link: 'https://wa.me/2347086049886' }
 };
+
+/* ---------- bank-account notice: a moving bar at the top of every page, hides itself after the end date ---------- */
+const BANK_NOTICE_ENDS = Date.parse('2026-10-12T00:00:00+01:00');   // 3 days from 8 Oct 2026, Nigeria time; change this one line to move the end date
+function initBankNotice() {
+  if (Date.now() >= BANK_NOTICE_ENDS || document.getElementById('bankNotice')) return;
+  const msg = 'New for sellers: you can now add your bank account in the Earnings tab on the Sell page and withdraw your earnings.';
+  const track = el('div', { class: 'bn-track' });
+  for (let i = 0; i < 4; i++) track.append(el('span', { text: msg }));
+  const bar = el('div', { id: 'bankNotice', class: 'bank-notice', role: 'status', 'data-public': '' }, track);
+  document.body.prepend(bar);
+  setTimeout(() => bar.remove(), Math.min(BANK_NOTICE_ENDS - Date.now(), 2147483647));   // also disappears if the page stays open past the end
+}
 
 function initChatWidget() {
   if ($('#tmChat')) return;

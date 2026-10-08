@@ -36,9 +36,15 @@ const ask = (text, user = null) => new Promise(resolve => {
 });
 const id = text => { const i = matchIntent(text); return i ? i.id : null; };
 
-test('support channels are exactly the real ones: two emails and one WhatsApp number', () => {
-  assert.deepStrictEqual(SUPPORT.emails, ['tmmarketsupport@gmail.com', 'support@gmail.com']);
+test('support channels are exactly the real ones: one email and one WhatsApp number', () => {
+  assert.deepStrictEqual(SUPPORT.emails, ['support@gmail.com']);
   assert.strictEqual(SUPPORT.whatsapp.link, 'https://wa.me/2347086049886');
+});
+
+test('support line never mentions the old tmmarketsupport address', () => {
+  const { SUPPORT_LINE } = require('../src/utils/chatFaq');
+  const all = JSON.stringify(require('../src/utils/chatFaq').INTENTS) + String(SUPPORT_LINE || '');
+  assert.ok(!/tmmarketsupport/i.test(all));
 });
 
 test('start returns a greeting that says it is automated, quick replies and support', () => {
