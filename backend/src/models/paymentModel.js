@@ -158,4 +158,21 @@ async function confirmPayment(orderId, reference, paidKobo, currency) {
   }
 }
 
-module.exports = { findOrderForPayment, savePendingPayment, confirmPayment };
+// Facts for the "new order" alert email to the admin. Read-only.
+async function getOrderAlertInfo(orderId) {
+  const r = await pool.query(
+    `SELECT o.order_number, o.total, o.shipping_name, o.shipping_phone, o.shipping_address, o.shipping_city, o.shipping_state,
+            bu.first_name AS buyer_first_name, bu.last_name AS buyer_last_name, bu.email AS buyer_email,
+            sp.store_name AS seller_name,
+            COALESCE((SELECT json_agg(json_build_object('name', oi.product_name, 'quantity', oi.quantity) ORDER BY oi.id)
+                      FROM order_items oi WHERE oi.order_id = o.id), '[]'::json) AS items
+     FROM orders o
+     LEFT JOIN users bu ON bu.id = o.user_id
+     LEFT JOIN seller_profiles sp ON sp.user_id = o.seller_id
+     WHERE o.id = $1`,
+    [orderId]
+  );
+  return r.rows[0] || null;
+}
+
+module.exports = { findOrderForPayment, savePendingPayment, confirmPayment, getOrderAlertInfo };

@@ -51,6 +51,7 @@ th{color:var(--muted);font-size:12px}tr:last-child td{border:0}tr.row{cursor:poi
 .lbar i{display:block;width:40%;height:100%;background:linear-gradient(90deg,var(--violet),var(--violet2));animation:slide 1.1s ease-in-out infinite}
 .loader p{font-size:12px;font-weight:800;color:var(--muted)}
 @keyframes slide{0%{transform:translateX(-110%)}100%{transform:translateX(280%)}}@keyframes pulse{50%{opacity:.7}}
+.badge{display:inline-block;min-width:20px;padding:1px 6px;margin-left:6px;border-radius:99px;background:var(--red);color:#fff;font-size:12px;line-height:18px;text-align:center}.alert{position:fixed;left:50%;transform:translateX(-50%);top:70px;z-index:15;max-width:92vw;background:var(--ink);color:var(--cream);border-radius:14px;padding:12px 16px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.3);font-weight:800;font-size:14px}.alert button{border:0;border-radius:9px;padding:7px 12px;font-weight:800;cursor:pointer}
 @media(max-width:560px){.bar img{height:28px}.tab{padding:8px 10px}h1{font-size:21px}.kv{grid-template-columns:90px 1fr}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
@@ -72,11 +73,12 @@ th{color:var(--muted);font-size:12px}tr:last-child td{border:0}tr.row{cursor:poi
 <div id="appView" hidden>
   <header><div class="wrap bar">
     <img src="assets/logo.svg" alt="TM Market">
-    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders</button></nav>
+    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders<span class="badge" id="obadge" hidden></span></button></nav>
     <span id="who" style="font-size:13px"></span><button class="btn" id="out">Sign out</button>
   </div></header>
   <main class="wrap" id="view"></main>
 </div>
+<div class="alert" id="alertbar" role="status" hidden><span id="alerttxt"></span><button id="alertgo" class="btn pri">View orders</button><button id="alertx" aria-label="Dismiss">✕</button></div>
 <div class="modal" id="modal" hidden><div class="sheet" id="sheet"></div></div>
 
 <script>
@@ -107,10 +109,10 @@ async function api(path, opt = {}) {
 async function run(text, fn) { Loader.show(text); try { return await fn(); } finally { Loader.hide(); } }
 
 /* auth */
-function signOut() { token = null; try { localStorage.removeItem('tm_admin_token'); } catch (e) {} $('#appView').hidden = true; $('#modal').hidden = true; $('#loginView').hidden = false; }
+function signOut() { stopAlerts(); token = null; try { localStorage.removeItem('tm_admin_token'); } catch (e) {} $('#appView').hidden = true; $('#modal').hidden = true; $('#loginView').hidden = false; }
 async function enter() {
   const d = await api('/api/admin/me');
-  $('#who').textContent = d.admin.name; $('#loginView').hidden = true; $('#appView').hidden = false; show('dash');
+  $('#who').textContent = d.admin.name; $('#loginView').hidden = true; $('#appView').hidden = false; show('dash'); startAlerts();
 }
 $('#go').onclick = async () => {
   const msg = $('#lmsg'); msg.textContent = '';
@@ -126,6 +128,42 @@ $('#go').onclick = async () => {
 };
 $('#pw').onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
 $('#out').onclick = signOut;
+
+/* new-order alerts: checks every 30 seconds while this page is open and signed in */
+let alertTimer = null, seenPaid = null, seenRefund = null;
+function beep() {
+  try {
+    const A = window.AudioContext || window.webkitAudioContext; if (!A) return;
+    const c = new A(), o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = 0.15;
+    o.start(); o.stop(c.currentTime + 0.25); setTimeout(() => c.close(), 600);
+  } catch (e) {}
+}
+function setBadge(n) {
+  const b = $('#obadge'); b.textContent = n > 99 ? '99+' : n; b.hidden = !n;
+  document.title = (n ? '(' + n + ') ' : '') + 'Admin | TM Market';
+}
+function raise(text) { $('#alerttxt').textContent = text; $('#alertbar').hidden = false; beep(); }
+async function checkAlerts() {
+  if (!token) return;
+  try {
+    const s = await api('/api/admin/stats');
+    const rf = await api('/api/admin/orders?status=refund_check&limit=1');
+    const paid = s.stats && s.stats.orders && s.stats.orders.byStatus ? (s.stats.orders.byStatus.confirmed || 0) : 0;
+    const refund = rf.total || 0;
+    setBadge(paid + refund);
+    if (seenPaid !== null) {
+      if (paid > seenPaid) raise((paid - seenPaid) === 1 ? 'New paid order. Please attend to the customer.' : (paid - seenPaid) + ' new paid orders. Please attend to the customers.');
+      else if (refund > seenRefund) raise('A paid order was cancelled. Check it and refund in Paystack.');
+    }
+    seenPaid = paid; seenRefund = refund;
+  } catch (e) { /* a missed check is fine; the next one tries again */ }
+}
+function startAlerts() { stopAlerts(); seenPaid = null; seenRefund = null; checkAlerts(); alertTimer = setInterval(checkAlerts, 30000); }
+function stopAlerts() { clearInterval(alertTimer); alertTimer = null; setBadge(0); $('#alertbar').hidden = true; }
+$('#alertx').onclick = () => { $('#alertbar').hidden = true; };
+$('#alertgo').onclick = () => { $('#alertbar').hidden = true; page = 1; show('orders'); };
+document.addEventListener('visibilitychange', () => { if (!document.hidden && alertTimer) checkAlerts(); });
 
 /* navigation */
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { page = 1; show(b.dataset.tab); });

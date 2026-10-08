@@ -5,6 +5,7 @@ const {
   savePendingPayment,
   confirmPayment
 } = require('../models/paymentModel');
+const { notifyAdminOfOrder } = require('../utils/adminAlert');
 const {
   paymentsStatus,
   initializeTransaction,
@@ -40,6 +41,10 @@ function safeCallbackUrl(candidate, orderId) {
     return fallback;
   }
 }
+
+// Outcomes that should email the admin. confirmPayment returns each of these only once per order,
+// so the webhook and the buyer's return page cannot both send an email.
+const ALERT_OUTCOMES = ['paid', 'paid_but_cancelled', 'oversold'];
 
 function makeReference(orderId) {
   const salt = crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -156,6 +161,7 @@ async function verifyPaystackPayment(req, res) {
 
     const result = await confirmPayment(order.id, reference, Number(tx.amount), tx.currency);
     const mapped = normalizeOutcome(result.outcome);
+    if (ALERT_OUTCOMES.includes(result.outcome)) notifyAdminOfOrder(order.id, result.outcome);
 
     return res.status(mapped.code).json({
       success: mapped.ok,
@@ -194,6 +200,7 @@ async function paystackWebhook(req, res) {
     }
 
     const result = await confirmPayment(orderId, reference, Number(data.amount), data.currency);
+    if (ALERT_OUTCOMES.includes(result.outcome)) notifyAdminOfOrder(orderId, result.outcome);
     if (result.outcome !== 'paid' && result.outcome !== 'already_paid') {
       console.warn('Webhook payment outcome:', result.outcome, result.orderNumber || orderId);
     }

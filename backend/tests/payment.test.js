@@ -22,7 +22,19 @@ let state = {
 mock('../src/models/paymentModel', {
   findOrderForPayment: async () => state.order,
   savePendingPayment: async () => state.savePending,
-  confirmPayment: async () => state.confirm
+  confirmPayment: async () => state.confirm,
+  getOrderAlertInfo: async () => ({
+    order_number: 'TM-TEST-7', total: '1500.00', shipping_name: 'Ada', shipping_phone: '0801', shipping_address: '1 Road',
+    shipping_city: 'Enugu', shipping_state: 'Enugu', buyer_first_name: 'Ada', buyer_last_name: 'O', buyer_email: 'buyer@test.com',
+    seller_name: 'Store', items: [{ name: 'Pencil', quantity: 2 }]
+  })
+});
+
+const sent = [];
+let mailFails = false;
+mock('../src/utils/mailer', {
+  mailConfigured: () => true,
+  sendMail: async m => { if (mailFails) throw new Error('mail down'); sent.push(m); }
 });
 
 mock('../src/utils/paystack', {
@@ -76,6 +88,61 @@ test('initialize payment only allows callback URLs on our own site', async () =>
   }
   await call(c.initializePaystackPayment, { user: { id: 1 }, body: { orderId: 7 } });
   assert.match(state.lastPayload.callback_url, /^https:\/\/tm-market-pi\.vercel\.app\//);
+});
+
+const tick = () => new Promise(r => setTimeout(r, 30));
+const verifyReq = { user: { id: 1 }, query: { orderId: '7', reference: 'TM-7-REF' } };
+
+test('admin gets an email when an order is paid', async () => {
+  process.env.ADMIN_NOTIFY_EMAIL = 'admin@test.com';
+  sent.length = 0;
+  state.confirm = { outcome: 'paid', orderNumber: 'TM-TEST-7' };
+  const r = await call(c.verifyPaystackPayment, verifyReq);
+  await tick();
+  assert.strictEqual(r.code, 200);
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(sent[0].to, 'admin@test.com');
+  assert.match(sent[0].subject, /New paid order: TM-TEST-7/);
+  assert.match(sent[0].text, /2 x Pencil/);
+});
+
+test('admin email is skipped for already-paid, unset address, and never breaks payment', async () => {
+  process.env.ADMIN_NOTIFY_EMAIL = 'admin@test.com';
+  sent.length = 0;
+  state.confirm = { outcome: 'already_paid', orderNumber: 'TM-TEST-7' };
+  await call(c.verifyPaystackPayment, verifyReq);
+  await tick();
+  assert.strictEqual(sent.length, 0);
+
+  delete process.env.ADMIN_NOTIFY_EMAIL;
+  state.confirm = { outcome: 'paid', orderNumber: 'TM-TEST-7' };
+  await call(c.verifyPaystackPayment, verifyReq);
+  await tick();
+  assert.strictEqual(sent.length, 0);
+
+  process.env.ADMIN_NOTIFY_EMAIL = 'admin@test.com';
+  mailFails = true;
+  const r = await call(c.verifyPaystackPayment, verifyReq);
+  await tick();
+  assert.strictEqual(r.code, 200);
+  mailFails = false;
+  delete process.env.ADMIN_NOTIFY_EMAIL;
+  state.confirm = { outcome: 'paid', orderNumber: 'TM-TEST-7' };
+});
+
+test('admin email also fires from the webhook, and flags refund cases', async () => {
+  process.env.ADMIN_NOTIFY_EMAIL = 'admin@test.com';
+  sent.length = 0;
+  state.webhookVerified = true;
+  state.confirm = { outcome: 'oversold', orderNumber: 'TM-TEST-7' };
+  const raw = Buffer.from(JSON.stringify({ event: 'charge.success', data: { reference: 'R', amount: 150000, currency: 'NGN', metadata: { orderId: 7 } } }), 'utf8');
+  const r = await call(c.paystackWebhook, { headers: { 'x-paystack-signature': 'ok' }, body: raw });
+  await tick();
+  assert.strictEqual(r.code, 200);
+  assert.strictEqual(sent.length, 1);
+  assert.match(sent[0].subject, /ACTION NEEDED/);
+  delete process.env.ADMIN_NOTIFY_EMAIL;
+  state.confirm = { outcome: 'paid', orderNumber: 'TM-TEST-7' };
 });
 
 test('verify payment maps paid outcome to success response', async () => {
