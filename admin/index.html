@@ -240,9 +240,15 @@ async function userSheet(id) {
     $('#sheet').style.maxWidth = ''; $('#sheet').innerHTML = `<h2>${esc(u.first_name + ' ' + u.last_name)}</h2><dl class="kv">
       <dt>Email</dt><dd>${esc(u.email)}</dd><dt>Phone</dt><dd>${esc(u.phone || 'Not added')}</dd><dt>Role</dt><dd>${esc(u.role)}</dd>
       <dt>Status</dt><dd>${u.is_active ? 'Active' : 'Suspended'}</dd><dt>Joined</dt><dd>${date(u.created_at)}</dd>
-      ${s ? `<dt>Store</dt><dd>${esc(s.store_name)}, ${esc(s.location)}</dd><dt>Products</dt><dd>${p.active} active, ${p.pending} pending, ${p.sold} sold, ${p.removed} removed</dd>` : ''}</dl>
-      <div class="acts">${isAdmin ? '<p>Admin accounts are managed in the database.</p>' : u.is_active ? `<button class="btn bad" id="act">Suspend user</button>` : `<button class="btn good" id="act">Reactivate user</button>`}<button class="btn" id="cls">Close</button></div><p class="msg" id="smsg"></p>`;
+      ${s ? `<dt>Store</dt><dd>${esc(s.store_name)}, ${esc(s.location)}</dd><dt>TM Verified</dt><dd>${s.is_verified ? 'Yes, since ' + date(s.verified_at) : 'No'}</dd><dt>Products</dt><dd>${p.active} active, ${p.pending} pending, ${p.sold} sold, ${p.removed} removed</dd>` : ''}</dl>
+      <div class="acts">${isAdmin ? '<p>Admin accounts are managed in the database.</p>' : u.is_active ? `<button class="btn bad" id="act">Suspend user</button>` : `<button class="btn good" id="act">Reactivate user</button>`}${s && !isAdmin ? `<button class="btn" id="ver">${s.is_verified ? 'Remove TM Verified' : 'Mark as TM Verified'}</button>` : ''}<button class="btn" id="cls">Close</button></div><p class="msg" id="smsg"></p>`;
     $('#modal').hidden = false; $('#cls').onclick = () => $('#modal').hidden = true;
+    if ($('#ver')) $('#ver').onclick = async () => {
+      const on = !s.is_verified;
+      if (on && !confirm("Mark this store as TM Verified? Only do this after you have confirmed: (1) the owner's phone or WhatsApp is real, (2) the shop or products are real, (3) the bank account name matches the owner or store.")) return;
+      try { await run('Saving...', () => api(`/api/admin/users/${u.id}/${on ? 'verify' : 'unverify'}`, { method: 'POST' })); $('#modal').hidden = true; users(); }
+      catch (e) { $('#smsg').textContent = e.message; }
+    };
     if ($('#act')) $('#act').onclick = async () => {
       if (u.is_active && !confirm('Suspend this user? They are signed out immediately and their listings are hidden.')) return;
       try { await run('Saving…', () => api(`/api/admin/users/${u.id}/${u.is_active ? 'suspend' : 'reactivate'}`, { method: 'POST' })); $('#modal').hidden = true; users(); }

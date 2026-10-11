@@ -127,7 +127,7 @@ async function getUserDetail(id) {
   if (!user) return null;
 
   const seller = (await pool.query(
-    `SELECT store_name, location, whatsapp, created_at FROM seller_profiles WHERE user_id = $1`,
+    `SELECT store_name, location, whatsapp, created_at, is_verified, verified_at FROM seller_profiles WHERE user_id = $1`,
     [id]
   )).rows[0] || null;
 
@@ -140,6 +140,21 @@ async function getUserDetail(id) {
   for (const row of counts) products[row.status] = row.n;
 
   return { user, seller, products };
+}
+
+// Marks a store as TM Verified (or removes it). Only the admin routes call this; sellers cannot change it.
+async function setSellerVerified(userId, verified, adminId) {
+  const r = await pool.query(
+    `UPDATE seller_profiles SET
+       is_verified = $2,
+       verified_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
+       verified_by = CASE WHEN $2 THEN $3::bigint ELSE NULL END,
+       updated_at = NOW()
+     WHERE user_id = $1
+     RETURNING user_id, is_verified, verified_at`,
+    [userId, verified, adminId]
+  );
+  return r.rows[0] || null;
 }
 
 // Admin accounts cannot be suspended from the panel (they are managed directly in the database).
@@ -329,6 +344,7 @@ module.exports = {
   listUsers,
   getUserDetail,
   setUserActive,
+  setSellerVerified,
   listProducts,
   setProductStatus
 };

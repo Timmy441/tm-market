@@ -304,3 +304,6 @@ body.dark .store-logo-fallback{background:#2f2870}
 .store-count{margin:0 0 14px;color:var(--ink);font-weight:800}
 .store-link{color:var(--violet);font-weight:800}
 @media(max-width:480px){.store-head{flex-direction:column;align-items:flex-start;padding:16px}.store-logo{width:64px;height:64px}}
+/* ---- TM Verified badge ---- */
+.verified-badge{display:inline-block;margin:2px 0 6px;padding:3px 10px;border-radius:999px;background:#e7f7ee;color:#136c3a;font-size:12px;font-weight:800;white-space:nowrap}
+body.dark .verified-badge{background:#123524;color:#7ee2a8}

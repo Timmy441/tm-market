@@ -40,7 +40,7 @@ function mapProduct(r) {
     id: String(r.id), name: r.name || '', category: r.category_name || 'Other',
     price, oldPrice: cmp && cmp > price ? cmp : null,
     image: r.image_url || images[0] || PLACEHOLDER_IMG, images,
-    description: r.description || '', seller: r.seller_name || '', sellerId: r.seller_id ? String(r.seller_id) : '', location: r.location || r.seller_location || '',
+    description: r.description || '', seller: r.seller_name || '', sellerId: r.seller_id ? String(r.seller_id) : '', sellerVerified: !!r.seller_verified, location: r.location || r.seller_location || '',
     available, stock, badge: available ? '' : stock, quantity: qty,
     condition: CONDITION_LABELS[r.item_condition] ? r.item_condition : ''
   };
@@ -1433,7 +1433,7 @@ async function showProductDetails(id, { onAdd } = {}) {
     <div class="modal-info"><span class="eyebrow">${esc(p.category)}</span><h2>${esc(p.name)}</h2>
       <div class="price detail-price">${money(p.price)} ${p.oldPrice ? `<span class="old-price">${money(p.oldPrice)}</span>` : ''}</div>
       <p class="detail-meta">${p.condition ? `<span class="cond cond-${esc(p.condition)}">${esc(CONDITION_LABELS[p.condition])}</span> · ` : ''}${esc(p.stock)}${p.location ? ' · 📍 ' + esc(p.location) : ''}</p>
-      ${p.seller ? `<p class="detail-meta">Sold by <strong>${esc(p.seller)}</strong>${p.sellerId ? ` &middot; <a class="store-link" href="store.html?id=${esc(p.sellerId)}">Visit store</a>` : ''}</p>` : ''}
+      ${p.seller ? `<p class="detail-meta">Sold by <strong>${esc(p.seller)}</strong>${p.sellerVerified ? ' <span class="verified-badge">&#10003; TM Verified</span>' : ''}${p.sellerId ? ` &middot; <a class="store-link" href="store.html?id=${esc(p.sellerId)}">Visit store</a>` : ''}</p>` : ''}
       <p class="detail-desc">${esc(p.description || 'No description provided.')}</p>
       <div class="detail-actions">
         <button class="btn btn-primary" type="button" data-detail-add ${p.available ? '' : 'disabled'}>${p.available ? 'Add to bag' : 'Unavailable'}</button>

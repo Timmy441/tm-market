@@ -25,6 +25,7 @@ const PRODUCT_SELECT = `
       su.is_active AS seller_active,
       sp.store_name AS seller_name,
       sp.location AS seller_location,
+      COALESCE(sp.is_verified, FALSE) AS seller_verified,
       i.quantity,
       (p.status = 'active' AND (i.quantity IS NULL OR i.quantity > 0)) AS available,
       p.is_featured,

@@ -4,6 +4,7 @@ const {
   listUsers,
   getUserDetail,
   setUserActive,
+  setSellerVerified,
   listProducts,
   setProductStatus,
   listOrders,
@@ -109,6 +110,21 @@ function changeUserStatus(active) {
       audit(req, active ? 'user.reactivate' : 'user.suspend', 'user', id);
       return res.json({ success: true, user: result.user });
     } catch (e) { return fail(res, e, 'Admin user status error'); }
+  };
+}
+
+function changeSellerVerified(verified) {
+  return async function (req, res) {
+    try {
+      const id = parsePositiveInt(req.params.id);
+      if (!id) return res.status(400).json({ success: false, message: 'Invalid user id' });
+
+      const seller = await setSellerVerified(id, verified, req.user.id);
+      if (!seller) return res.status(404).json({ success: false, message: 'This user has no seller store.' });
+
+      audit(req, verified ? 'seller.verify' : 'seller.unverify', 'user', id);
+      return res.json({ success: true, seller });
+    } catch (e) { return fail(res, e, 'Admin seller verification error'); }
   };
 }
 
@@ -276,6 +292,8 @@ module.exports = {
   userDetail,
   suspendUser: changeUserStatus(false),
   reactivateUser: changeUserStatus(true),
+  verifySeller: changeSellerVerified(true),
+  unverifySeller: changeSellerVerified(false),
   products,
   productDetail,
   changeProductStatus

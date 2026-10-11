@@ -41,7 +41,7 @@ async function createSellerAndPromote(userId, { storeName, description, location
 
 async function getPublicSellerStore(userId) {
   const sellerResult = await pool.query(
-    `SELECT id, user_id, store_name, description, location, logo_url, is_active, created_at
+    `SELECT id, user_id, store_name, description, location, logo_url, is_verified, is_active, created_at
      FROM seller_profiles
      WHERE user_id = $1 AND is_active = TRUE
      LIMIT 1`,

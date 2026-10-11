@@ -63,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const meta = [s.location ? '📍 ' + s.location : '', joined ? 'On TM since ' + joined : ''].filter(Boolean).join(' · ');
 
     const info = el('div', { class: 'store-info' }, el('span', { class: 'eyebrow', text: 'TM STORE' }), el('h1', { text: s.store_name }));
+    if (s.is_verified) info.append(el('span', { class: 'verified-badge', text: '\u2713 TM Verified' }));
     if (meta) info.append(el('p', { class: 'store-meta', text: meta }));
     if (s.description) info.append(el('p', { class: 'store-about', text: s.description }));
 

@@ -18,6 +18,8 @@ router.get('/users', c.users);
 router.get('/users/:id', c.userDetail);
 router.post('/users/:id/suspend', c.suspendUser);
 router.post('/users/:id/reactivate', c.reactivateUser);
+router.post('/users/:id/verify', c.verifySeller);
+router.post('/users/:id/unverify', c.unverifySeller);
 
 router.get('/products', c.products);
 router.get('/products/:id', c.productDetail);
