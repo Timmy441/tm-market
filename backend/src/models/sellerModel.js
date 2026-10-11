@@ -61,7 +61,22 @@ async function getPublicSellerStore(userId) {
     [userId]
   );
 
-  return { seller, products: productsResult.rows };
+  // Store rating from real, visible reviews. If the reviews table is not created yet,
+  // the store page must still load, so a failure here just means "no ratings".
+  let rating = { average: null, count: 0 };
+  try {
+    const rr = await pool.query(
+      `SELECT COUNT(*)::int AS count, ROUND(AVG(rating)::numeric, 1) AS average
+       FROM product_reviews WHERE seller_id = $1 AND is_hidden = FALSE`,
+      [userId]
+    );
+    const row = rr.rows[0];
+    if (row && row.count > 0) rating = { average: Number(row.average), count: row.count };
+  } catch (e) {
+    console.error('Store rating unavailable:', e.message);
+  }
+
+  return { seller, products: productsResult.rows, rating };
 }
 
 async function updateSeller(userId, { storeName, description, location, whatsapp }) {

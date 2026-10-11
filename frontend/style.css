@@ -317,3 +317,29 @@ body.dark .verified-badge{background:#123524;color:#7ee2a8}
 .order-history-list b{color:var(--ink);font-size:12px}
 .order-history-list small{color:var(--muted);font-size:11px}
 .order-history-list span{color:var(--text);font-size:12px;overflow-wrap:anywhere}
+
+/* reviews and ratings */
+.rv-summary{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--ink);font-size:14px}
+.rv-summary b{color:var(--ink)}.rv-summary small{color:var(--muted);font-size:12px}
+.rv-stars{color:var(--gold);letter-spacing:2px;font-size:15px;line-height:1}
+.rv-head{margin:4px 0 8px}
+.rv-box{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--cream)}
+.rv-box:empty{display:none}
+.rv-title{display:block;margin-bottom:6px;color:var(--ink);font-size:14px}
+.rv-item{display:grid;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+.rv-title+.rv-item{border-top:0}
+.rv-name{color:var(--ink);font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.rv-open{justify-self:start;min-height:38px;padding:0 14px;font-size:13px}
+.rv-done{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rv-done small{color:var(--muted);font-size:12px}
+.rv-form{display:grid;gap:10px}
+.rv-pick{display:flex;gap:4px;max-width:260px}
+.rv-pick button{flex:1 1 0;min-width:0;max-width:48px;height:44px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--muted);font-size:24px;line-height:1}
+.rv-pick button.is-on{color:var(--gold);border-color:var(--gold)}
+.rv-text{width:100%;min-height:84px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:14px;resize:vertical}
+.rv-text:focus{outline:0;border-color:var(--violet);box-shadow:0 0 0 4px rgba(124,58,237,.10)}
+.rv-actions{display:flex;flex-wrap:wrap;gap:8px}.rv-actions .btn{min-height:40px;font-size:13px}.rv-actions .btn[disabled]{opacity:.5;cursor:not-allowed}
+.rv-list{margin-top:18px}.rv-list-title{margin:0 0 6px;color:var(--ink);font-size:15px}
+.rv-card{padding:12px 0;border-top:1px solid var(--line)}
+.rv-card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rv-card-top b{color:var(--ink);font-size:13px}.rv-card-top small{margin-left:auto;color:var(--muted);font-size:12px}
+.rv-card p{margin:6px 0 0;color:var(--text);font-size:14px;overflow-wrap:anywhere;white-space:pre-line}
+@media(max-width:480px){.rv-box{padding:12px}.rv-pick{gap:2px}.rv-actions .btn{flex:1 1 auto}}

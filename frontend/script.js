@@ -740,7 +740,7 @@ function initStorefront() {
     shipped: 'On the way', delivered: 'Delivered', cancelled: 'Cancelled'
   };
   const AUTO_NOTE = /^(Payment received|Buyer confirmed delivery|Delivery expected between)/;
-  const ordersView = { page: 1, total: 0, items: [], busy: false };
+  const ordersView = { page: 1, total: 0, items: [], busy: false, reviewed: new Map() };
 
   // "2026-10-08" -> a local date (no time-zone shifting).
   function dayToDate(s) {
@@ -817,6 +817,73 @@ function initStorefront() {
     return el('details', { class: 'order-history' }, el('summary', { text: 'See full order history' }), list);
   }
 
+  // "How was your order?" box on delivered orders: one rating per item, only once.
+  function renderReviewBox(o) {
+    const box = el('div', { class: 'rv-box' });
+    const items = (o.items || []).filter(i => i.productId);
+    if (!items.length) return box;
+    box.append(el('strong', { class: 'rv-title', text: 'How was your order?' }));
+
+    items.forEach(i => {
+      const key = `${o.id}:${i.productId}`;
+      const row = el('div', { class: 'rv-item' });
+
+      function showStatus() {
+        row.replaceChildren(el('span', { class: 'rv-name', text: i.name }));
+        const done = ordersView.reviewed.get(key);
+        if (done) {
+          row.append(el('span', { class: 'rv-done' },
+            el('span', { class: 'rv-stars', 'aria-hidden': 'true', text: starText(done) }),
+            el('small', { text: `You rated this ${done} out of 5` })));
+          return;
+        }
+        const open = el('button', { type: 'button', class: 'btn btn-ghost rv-open', text: 'Rate this item' });
+        open.addEventListener('click', showForm);
+        row.append(open);
+      }
+
+      function showForm() {
+        let rating = 0;
+        const pick = el('div', { class: 'rv-pick', role: 'group', 'aria-label': 'Your rating' });
+        const stars = [1, 2, 3, 4, 5].map(n => {
+          const b = el('button', { type: 'button', 'aria-label': `${n} star${n === 1 ? '' : 's'}`, 'aria-pressed': 'false', text: '\u2605' });
+          b.addEventListener('click', () => {
+            rating = n;
+            stars.forEach((x, k) => { x.classList.toggle('is-on', k < n); x.setAttribute('aria-pressed', k + 1 === n ? 'true' : 'false'); });
+          });
+          return b;
+        });
+        stars.forEach(b => pick.append(b));
+
+        const text = el('textarea', { class: 'rv-text', maxlength: '1000', rows: '3', placeholder: 'Tell other buyers about it (optional)', 'aria-label': 'Your review' });
+        const send = el('button', { type: 'button', class: 'btn btn-primary', text: 'Submit review' });
+        const cancel = el('button', { type: 'button', class: 'btn btn-ghost', text: 'Cancel' });
+        cancel.addEventListener('click', showStatus);
+        send.addEventListener('click', async () => {
+          if (!rating) return toast('Please tap a star first.');
+          send.disabled = true; cancel.disabled = true;
+          try {
+            const out = await apiRequest('POST', '/api/reviews', { orderId: o.id, productId: i.productId, rating, comment: text.value });
+            ordersView.reviewed.set(key, rating);
+            toast(out.message || 'Thank you for your review!');
+            showStatus();
+          } catch (err) {
+            send.disabled = false; cancel.disabled = false;
+            toast(err.message || 'Unable to save your review.', 4500);
+            if (err.status === 409) loadOrders(true);   // already reviewed or not delivered: refresh what we show
+          }
+        });
+
+        row.replaceChildren(el('span', { class: 'rv-name', text: i.name }),
+          el('div', { class: 'rv-form' }, pick, text, el('div', { class: 'rv-actions' }, send, cancel)));
+      }
+
+      showStatus();
+      box.append(row);
+    });
+    return box;
+  }
+
   function renderOrderCard(o) {
     const card = el('article', { class: 'order-card' });
     const who = (o.seller && o.seller.storeName) || 'TM Market seller';
@@ -843,6 +910,7 @@ function initStorefront() {
       card.append(box);
     }
 
+    if (o.status === 'delivered') card.append(renderReviewBox(o));
     if (o.status !== 'pending') card.append(renderHistory(o));
     const actions = el('div', { class: 'order-actions' });
     if (o.status === 'pending') {
@@ -893,7 +961,11 @@ function initStorefront() {
     ordersView.busy = true;
     if (reset) { ordersView.page = 1; ordersView.items = []; paintOrders('Loading your orders…'); }
     try {
-      const out = await apiRequest('GET', `/api/orders/me?page=${ordersView.page}&limit=10`);
+      const [out, mine] = await Promise.all([
+        apiRequest('GET', `/api/orders/me?page=${ordersView.page}&limit=10`),
+        apiRequest('GET', '/api/reviews/mine').catch(() => null)   // never blocks the orders list
+      ]);
+      if (mine && Array.isArray(mine.reviews)) mine.reviews.forEach(r => ordersView.reviewed.set(`${r.orderId}:${r.productId}`, r.rating));
       const rows = Array.isArray(out.orders) ? out.orders : [];
       ordersView.items = reset ? rows : ordersView.items.concat(rows);
       ordersView.total = Number(out.total) || 0;
@@ -1448,6 +1520,43 @@ async function uploadImage(file, signPath = '/api/sellers/me/uploads/sign') {
 }
 
 
+/* ---------- reviews and ratings (shared by My Orders, the product popup and the store page) ---------- */
+const starText = n => { const r = Math.max(0, Math.min(5, Math.round(Number(n) || 0))); return '\u2605'.repeat(r) + '\u2606'.repeat(5 - r); };
+
+// "★★★★☆ 4.6 (12 reviews)". Returns null when there are no real reviews, so nothing is shown.
+function ratingLine(summary) {
+  if (!summary || !summary.count || summary.average == null) return null;
+  const n = Number(summary.count), avg = Number(summary.average).toFixed(1);
+  return el('span', { class: 'rv-summary', role: 'img', 'aria-label': `Rated ${avg} out of 5 from ${n} review${n === 1 ? '' : 's'}` },
+    el('span', { class: 'rv-stars', 'aria-hidden': 'true', text: starText(summary.average) }),
+    el('b', { text: avg }),
+    el('small', { text: `(${n} review${n === 1 ? '' : 's'})` }));
+}
+
+// Adds the rating under the product name and the most recent reviews at the bottom of the popup.
+async function loadProductReviews(info, productId) {
+  if (!info) return;
+  let data;
+  try { data = await apiRequest('GET', `/api/reviews/product/${encodeURIComponent(productId)}?limit=5`); }
+  catch { return; }                          // reviews are a bonus: the popup works without them
+  if (!info.isConnected) return;             // the popup was closed or switched to another product
+  const line = ratingLine(data.summary);
+  if (!line) return;
+  info.querySelector('h2')?.after(el('p', { class: 'rv-head' }, line));
+
+  const list = el('div', { class: 'rv-list' }, el('h3', { class: 'rv-list-title', text: 'Recent reviews' }));
+  (data.reviews || []).forEach(r => {
+    const when = r.createdAt ? new Date(r.createdAt) : null;
+    const card = el('article', { class: 'rv-card' }, el('div', { class: 'rv-card-top' },
+      el('span', { class: 'rv-stars', 'aria-hidden': 'true', text: starText(r.rating) }),
+      el('b', { text: r.reviewer }),
+      el('small', { text: when && !isNaN(when) ? when.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '' })));
+    if (r.comment) card.append(el('p', { text: r.comment }));
+    list.append(card);
+  });
+  info.append(list);
+}
+
 /* ---------- product details (used by the homepage and the shop page) ---------- */
 async function showProductDetails(id, { onAdd } = {}) {
   const modal = $('#productModal'), box = $('#modalContent');
@@ -1472,6 +1581,7 @@ async function showProductDetails(id, { onAdd } = {}) {
         <button class="btn btn-ghost" type="button" data-detail-contact>Chat with seller on WhatsApp</button>
       </div></div></div>`;
 
+  loadProductReviews(box.querySelector('.modal-info'), p.id);
   box.querySelector('.detail-thumbs')?.addEventListener('click', e => {
     const t = e.target.closest('[data-thumb]'); if (!t) return;
     $('#detailMain').src = imgs[Number(t.dataset.thumb)];
