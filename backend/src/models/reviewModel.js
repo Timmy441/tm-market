@@ -57,4 +57,61 @@ async function listMyReviews(userId) {
   return r.rows;
 }
 
-module.exports = { findOrderItemForBuyer, createReview, listProductReviews, listMyReviews };
+// ---- admin moderation ----
+
+// Escape LIKE wildcards so a search for "50%" matches the text, not everything.
+function like(text) {
+  return `%${String(text).replace(/[\\%_]/g, '\\$&')}%`;
+}
+
+// Every review, newest first, with who wrote it and what it is about. Admin only.
+async function adminListReviews({ search, visibility, limit, offset }) {
+  const conditions = [];
+  const values = [];
+
+  if (search) {
+    values.push(like(search));
+    const n = values.length;
+    conditions.push(`(r.comment ILIKE $${n} OR p.name ILIKE $${n} OR sp.store_name ILIKE $${n}
+      OR u.first_name ILIKE $${n} OR u.last_name ILIKE $${n} OR u.email ILIKE $${n})`);
+  }
+  if (visibility === 'hidden') conditions.push('r.is_hidden = TRUE');
+  if (visibility === 'visible') conditions.push('r.is_hidden = FALSE');
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const from = `FROM product_reviews r
+     LEFT JOIN products p ON p.id = r.product_id
+     LEFT JOIN users u ON u.id = r.buyer_id
+     LEFT JOIN seller_profiles sp ON sp.user_id = r.seller_id
+     ${where}`;
+
+  const total = (await pool.query(`SELECT COUNT(*)::int AS total ${from}`, values)).rows[0].total;
+  const hiddenCount = (await pool.query(`SELECT COUNT(*)::int AS n FROM product_reviews WHERE is_hidden = TRUE`)).rows[0].n;
+
+  values.push(limit, offset);
+  const rows = (await pool.query(
+    `SELECT r.id, r.rating, r.comment, r.is_hidden, r.created_at, r.product_id, r.order_id,
+            p.name AS product_name, sp.store_name AS seller_name,
+            u.first_name, u.last_name, u.email
+     ${from}
+     ORDER BY r.created_at DESC, r.id DESC
+     LIMIT $${values.length - 1} OFFSET $${values.length}`,
+    values
+  )).rows;
+
+  return { reviews: rows, total, hiddenCount };
+}
+
+// Hiding never deletes anything: the review simply stops showing on the site and in ratings.
+async function adminSetReviewHidden(id, hidden) {
+  const r = await pool.query(
+    `UPDATE product_reviews SET is_hidden = $2 WHERE id = $1 RETURNING id, is_hidden`,
+    [id, hidden]
+  );
+  return r.rows[0] || null;
+}
+
+module.exports = {
+  findOrderItemForBuyer, createReview, listProductReviews, listMyReviews,
+  adminListReviews, adminSetReviewHidden
+};

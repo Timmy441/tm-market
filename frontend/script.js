@@ -884,6 +884,40 @@ function initStorefront() {
     return box;
   }
 
+  // The receipt is a PDF the server makes on demand and only for the buyer's own order, so it needs the login
+  // header. A plain link cannot send that: fetch it, then save the bytes as a file.
+  async function downloadReceipt(o, btn) {
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Preparing receipt…';
+    try {
+      let res;
+      try {
+        res = await fetch(`${API_URL}/api/orders/${encodeURIComponent(o.id)}/receipt`, { headers: { Authorization: `Bearer ${Auth.token()}` } });
+      } catch { throw new Error('Unable to reach TM Market. Check your connection and try again.'); }
+      if (res.status === 401) { Auth.clear(); guardRoute(); throw new Error('Your session has expired. Please log in again.'); }
+      if (!res.ok) {
+        let msg = '';
+        try { msg = (await res.json()).message; } catch { /* not JSON */ }
+        throw new Error(msg || 'We could not create your receipt. Please try again.');
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `TM-Receipt-${o.orderNumber}.pdf`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast('Your receipt is downloading.');
+    } catch (err) {
+      toast(err.message || 'We could not create your receipt. Please try again.', 4500);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
+
   function renderOrderCard(o) {
     const card = el('article', { class: 'order-card' });
     const who = (o.seller && o.seller.storeName) || 'TM Market seller';
@@ -903,7 +937,7 @@ function initStorefront() {
       const line = deliveryLine(o);
       const box = el('div', { class: 'order-window' + (line.late ? ' is-late' : '') }, el('strong', { text: line.text }));
       if (line.late) {
-        box.append(el('small', { text: 'This is taking longer than expected. Please contact support: support@gmail.com' }));
+        box.append(el('small', { text: 'This is taking longer than expected. Please contact support: tmmarketsupport@gmail.com' }));
       }
       const note = [...(o.events || [])].reverse().find(e => e.note && !AUTO_NOTE.test(e.note));
       if (note) box.append(el('small', { text: `Note: ${note.note}` }));
@@ -938,6 +972,12 @@ function initStorefront() {
         catch (err) { got.disabled = false; toast(err.message || 'Unable to confirm delivery.', 4500); }
       });
       actions.append(got);
+    }
+    // A receipt exists once the payment is confirmed (the server checks this again).
+    if (['confirmed', 'processing', 'shipped', 'delivered'].includes(o.status)) {
+      const rec = el('button', { type: 'button', class: 'btn btn-ghost', text: 'Download receipt (PDF)' });
+      rec.addEventListener('click', () => downloadReceipt(o, rec));
+      actions.append(rec);
     }
     if (actions.children.length) card.append(actions);
     return card;
@@ -2240,7 +2280,7 @@ document.addEventListener("DOMContentLoaded", () => {
 const CHAT_TIMEOUT = 15000;   // ms; the chat can never hang forever
 // Used ONLY if the backend cannot be reached for the greeting. Same channels as the backend list.
 const CHAT_FALLBACK_SUPPORT = {
-  emails: ['support@gmail.com'],
+  emails: ['tmmarketsupport@gmail.com'],
   whatsapp: { display: '+234 708 604 9886', link: 'https://wa.me/2347086049886' }
 };
 

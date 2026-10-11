@@ -2,7 +2,9 @@ const {
   findOrderItemForBuyer,
   createReview,
   listProductReviews,
-  listMyReviews
+  listMyReviews,
+  adminListReviews,
+  adminSetReviewHidden
 } = require('../models/reviewModel');
 const { parsePositiveInt } = require('./productController');
 
@@ -126,4 +128,69 @@ async function myReviews(req, res) {
   }
 }
 
-module.exports = { submitReview, getProductReviews, myReviews, reviewerName };
+/* ---------------- admin: moderation ---------------- */
+
+const VISIBILITY = ['visible', 'hidden'];
+
+// Admin actions are written to the server log (visible with `fly logs`), like the other admin actions.
+function audit(req, action, id) {
+  console.log(JSON.stringify({ audit: true, at: new Date().toISOString(), adminId: req.user.id, action, targetType: 'review', targetId: id }));
+}
+
+async function adminList(req, res) {
+  try {
+    const q = req.query || {};
+    if (q.status && !VISIBILITY.includes(q.status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status filter' });
+    }
+    const limit = Math.min(parsePositiveInt(q.limit) || 20, 50);
+    const page = parsePositiveInt(q.page) || 1;
+    const search = typeof q.search === 'string' ? q.search.trim().slice(0, 100) : '';
+
+    const out = await adminListReviews({ search, visibility: q.status || null, limit, offset: (page - 1) * limit });
+    return res.status(200).json({
+      success: true,
+      reviews: out.reviews.map(r => ({
+        id: Number(r.id),
+        rating: Number(r.rating),
+        comment: r.comment || null,
+        hidden: !!r.is_hidden,
+        createdAt: r.created_at,
+        product: { id: r.product_id == null ? null : Number(r.product_id), name: r.product_name || null },
+        seller: r.seller_name || null,
+        reviewer: { name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || null, email: r.email || null },
+        orderId: Number(r.order_id)
+      })),
+      total: out.total,
+      hiddenCount: out.hiddenCount,
+      page,
+      limit
+    });
+  } catch (error) {
+    console.error('Admin reviews error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong' });
+  }
+}
+
+function setHidden(hidden) {
+  return async function (req, res) {
+    try {
+      const id = parsePositiveInt(req.params.id);
+      if (!id) return res.status(400).json({ success: false, message: 'Invalid review id' });
+
+      const saved = await adminSetReviewHidden(id, hidden);
+      if (!saved) return res.status(404).json({ success: false, message: 'Review not found' });
+
+      audit(req, hidden ? 'review.hide' : 'review.unhide', id);
+      return res.status(200).json({ success: true, review: { id: Number(saved.id), hidden: !!saved.is_hidden } });
+    } catch (error) {
+      console.error('Admin review status error:', error);
+      return res.status(500).json({ success: false, message: 'Something went wrong' });
+    }
+  };
+}
+
+module.exports = {
+  submitReview, getProductReviews, myReviews, reviewerName,
+  adminList, adminHide: setHidden(true), adminUnhide: setHidden(false)
+};

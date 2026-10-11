@@ -16,7 +16,7 @@ h1,h2,h3,p{margin:0}button,input,select{font:inherit}[hidden]{display:none!impor
 .wrap{max-width:1100px;margin:0 auto;padding:0 16px}
 header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
 .bar{display:flex;align-items:center;gap:12px;min-height:60px;flex-wrap:wrap;padding:8px 0}
-.bar img{height:34px}.bar nav{display:flex;gap:4px;flex:1}
+.bar img{height:34px}.bar nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}
 .tab{border:0;background:none;color:var(--text);font-weight:800;padding:9px 14px;border-radius:10px;cursor:pointer}
 .tab.on{background:var(--ink);color:var(--cream)}
 .btn{border:1px solid var(--line);background:none;color:var(--ink);font-weight:800;border-radius:10px;min-height:38px;padding:0 14px;cursor:pointer}
@@ -52,7 +52,7 @@ th{color:var(--muted);font-size:12px}tr:last-child td{border:0}tr.row{cursor:poi
 .loader p{font-size:12px;font-weight:800;color:var(--muted)}
 @keyframes slide{0%{transform:translateX(-110%)}100%{transform:translateX(280%)}}@keyframes pulse{50%{opacity:.7}}
 .badge{display:inline-block;min-width:20px;padding:1px 6px;margin-left:6px;border-radius:99px;background:var(--red);color:#fff;font-size:12px;line-height:18px;text-align:center}.alert{position:fixed;left:50%;transform:translateX(-50%);top:70px;z-index:15;max-width:92vw;background:var(--ink);color:var(--cream);border-radius:14px;padding:12px 16px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.3);font-weight:800;font-size:14px}.alert button{border:0;border-radius:9px;padding:7px 12px;font-weight:800;cursor:pointer}
-@media(max-width:560px){.bar img{height:28px}.tab{padding:8px 10px}h1{font-size:21px}.kv{grid-template-columns:90px 1fr}}
+@media(max-width:560px){.bar img{height:28px}.bar nav{order:3;flex:1 1 100%}.tab{padding:8px 10px}h1{font-size:21px}.kv{grid-template-columns:90px 1fr}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -73,7 +73,7 @@ th{color:var(--muted);font-size:12px}tr:last-child td{border:0}tr.row{cursor:poi
 <div id="appView" hidden>
   <header><div class="wrap bar">
     <img src="assets/logo.svg" alt="TM Market">
-    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders<span class="badge" id="obadge" hidden></span></button><button class="tab" data-tab="withdrawals">Withdrawals<span class="badge" id="wbadge" hidden></span></button></nav>
+    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders<span class="badge" id="obadge" hidden></span></button><button class="tab" data-tab="withdrawals">Withdrawals<span class="badge" id="wbadge" hidden></span></button><button class="tab" data-tab="reviews">Reviews</button></nav>
     <span id="who" style="font-size:13px"></span><button class="btn" id="out">Sign out</button>
   </div></header>
   <main class="wrap" id="view"></main>
@@ -179,7 +179,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && al
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { page = 1; show(b.dataset.tab); });
 function show(t) {
   tab = t; $('#view').innerHTML = ''; document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  ({ dash, users, products, orders, withdrawals })[t]();
+  ({ dash, users, products, orders, withdrawals, reviews })[t]();
 }
 const fail = e => { $('#view').innerHTML = `<div class="card err">${esc(e.message)}<br><br><button class="btn" onclick="show(tab)">Try again</button></div>`; };
 
@@ -315,13 +315,14 @@ async function orderSheet(id) {
       ${canDates ? `<div class="tools"><input id="wf" type="date" aria-label="From date" value="${esc(o.deliveryWindow ? o.deliveryWindow.from : '')}"><input id="wt" type="date" aria-label="To date" value="${esc(o.deliveryWindow ? o.deliveryWindow.to : '')}"><button class="btn" id="wsave">Save dates</button></div>` : ''}
       ${moves.length ? `<div class="tools"><input id="onote" maxlength="200" placeholder="Optional note for the buyer" aria-label="Note"></div>` : ''}
       <div id="rform"></div>
-      <div class="acts" id="oacts">${moves.map(m => `<button class="btn ${m[2]}" data-st="${m[1]}">${m[0]}</button>`).join('')}${o.payment.status === 'successful' ? '<button class="btn bad" id="refund">Record refund</button>' : ''}<button class="btn" id="cls">Close</button></div>
+      <div class="acts" id="oacts">${moves.map(m => `<button class="btn ${m[2]}" data-st="${m[1]}">${m[0]}</button>`).join('')}${o.payment.status === 'successful' ? '<button class="btn bad" id="refund">Record refund</button>' : ''}${['successful', 'refunded'].includes(o.payment.status) ? '<button class="btn" id="rcpt">Download receipt (PDF)</button>' : ''}<button class="btn" id="cls">Close</button></div>
       <p class="msg" id="smsg" role="alert"></p>`;
     $('#modal').hidden = false; $('#cls').onclick = () => { $('#modal').hidden = true; $('#sheet').style.maxWidth = ''; };
     if ($('#wsave')) $('#wsave').onclick = async () => {
       try { await run('Saving…', () => api(`/api/admin/orders/${o.id}/delivery-window`, { method: 'PUT', body: JSON.stringify({ from: $('#wf').value, to: $('#wt').value }) })); orderSheet(o.id); orders(); }
       catch (e) { $('#smsg').textContent = e.message; }
     };
+    if ($('#rcpt')) $('#rcpt').onclick = () => downloadReceipt(o, $('#rcpt'));
     if ($('#refund')) $('#refund').onclick = () => {
       const draft = { ref: '', note: '' };
       const form = html => { $('#rform').innerHTML = html; $('#oacts').hidden = true; $('#smsg').textContent = ''; };
@@ -437,6 +438,68 @@ async function withdrawalSheet(id) {
       };
     };
   } catch (e) { alert(e.message); }
+}
+
+/* receipt: the PDF is made by the server and needs the login header, so fetch it and save it as a file */
+async function downloadReceipt(o, btn) {
+  const label = btn.textContent, ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 20000);
+  btn.disabled = true; btn.textContent = 'Preparing…'; $('#smsg').textContent = '';
+  try {
+    const r = await fetch(API + `/api/admin/orders/${encodeURIComponent(o.id)}/receipt`, { headers: { Authorization: 'Bearer ' + token }, signal: ctl.signal });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 401) signOut();
+      throw new Error(d.message || 'Could not create the receipt.');
+    }
+    const url = URL.createObjectURL(await r.blob()), a = document.createElement('a');
+    a.href = url; a.download = `TM-Receipt-${o.orderNumber}.pdf`; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { $('#smsg').textContent = e.name === 'AbortError' ? 'The server took too long. Try again.' : e.message === 'Failed to fetch' ? 'Cannot reach the server. Check your connection.' : e.message; }
+  finally { clearTimeout(t); btn.disabled = false; btn.textContent = label; }
+}
+
+/* reviews: hide abusive or fake reviews. Hiding never deletes; a hidden review can be shown again. */
+let revData = [];
+const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+const starsHtml = n => `<span role="img" aria-label="${n} out of 5 stars" style="color:var(--gold);white-space:nowrap;letter-spacing:1px">${stars(n)}</span>`;
+const revPill = r => `<span class="pill ${r.hidden ? 'no' : 'ok'}">${r.hidden ? 'Hidden' : 'Showing'}</span>`;
+
+async function reviews() {
+  const keep = vals();
+  if (!$('#q')) $('#view').innerHTML = `<h1>Reviews</h1><div class="tools"><input id="q" placeholder="Search comment, product, store or reviewer" aria-label="Search reviews"><select id="fa" aria-label="Status"><option value="">All reviews</option><option value="visible">Showing</option><option value="hidden">Hidden</option></select></div><div id="list"></div>`;
+  else { $('#q').value = keep.q; }
+  try {
+    const d = await run('Loading reviews…', () => api('/api/admin/reviews?' + qs({ search: $('#q').value, status: $('#fa').value, page })));
+    revData = d.reviews;
+    const rows = d.reviews.map(r => `<tr class="row" data-id="${esc(r.id)}"><td>${esc(r.product.name || 'Removed product')}</td><td>${esc(r.reviewer.name || 'Unknown')}</td><td>${starsHtml(r.rating)}</td><td>${r.comment ? esc(r.comment.length > 70 ? r.comment.slice(0, 70) + '…' : r.comment) : '<span style="color:var(--muted)">No comment</span>'}</td><td>${date(r.createdAt)}</td><td>${revPill(r)}</td></tr>`).join('');
+    $('#list').innerHTML = `${d.hiddenCount ? `<p style="font-size:13px;margin:0 0 10px">${d.hiddenCount} hidden review${d.hiddenCount === 1 ? '' : 's'} in total.</p>` : ''}<div class="tbl"><table><tr><th>Product</th><th>Reviewer</th><th>Rating</th><th>Comment</th><th>Date</th><th>Status</th></tr>${rows || '<tr><td colspan="6" class="empty">' + ($('#q').value || $('#fa').value ? 'No reviews match.' : 'No reviews yet.') + '</td></tr>'}</table></div>${pager(d)}`;
+    wire(reviews);
+    document.querySelectorAll('tr.row').forEach(r => r.onclick = () => reviewSheet(r.dataset.id));
+  } catch (e) { $('#list').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+}
+
+function reviewSheet(id) {
+  const r = revData.find(x => String(x.id) === String(id));
+  if (!r) return;
+  const close = () => { $('#modal').hidden = true; $('#sheet').style.maxWidth = ''; };
+  $('#sheet').style.maxWidth = '560px';
+  $('#sheet').innerHTML = `<h2>Review of ${esc(r.product.name || 'a removed product')}</h2><p>${revPill(r)}</p><dl class="kv">
+    <dt>Rating</dt><dd>${starsHtml(r.rating)} ${r.rating} out of 5</dd>
+    <dt>Comment</dt><dd style="white-space:pre-wrap">${r.comment ? esc(r.comment) : 'No comment written.'}</dd>
+    <dt>Reviewer</dt><dd>${esc(r.reviewer.name || 'Unknown')}${r.reviewer.email ? '<br>' + esc(r.reviewer.email) : ''}</dd>
+    <dt>Store</dt><dd>${esc(r.seller || '-')}</dd>
+    <dt>Written</dt><dd>${date(r.createdAt)}</dd></dl>
+    <p style="font-size:13px;margin-bottom:12px">${r.hidden ? 'This review is hidden. It does not show on the product page or in the ratings.' : 'Hiding removes it from the product page and from the star ratings. Nothing is deleted, and you can show it again any time. The reviewer is not told.'}</p>
+    <div class="acts"><button class="btn ${r.hidden ? 'good' : 'bad'}" id="rvact">${r.hidden ? 'Show review again' : 'Hide review'}</button><button class="btn" id="cls">Close</button></div>
+    <p class="msg" id="smsg" role="alert"></p>`;
+  $('#modal').hidden = false;
+  $('#cls').onclick = close;
+  $('#rvact').onclick = async () => {
+    if (!r.hidden && !confirm('Hide this review? It disappears from the product page and from the star ratings.')) return;
+    $('#rvact').disabled = true;
+    try { await run('Saving…', () => api(`/api/admin/reviews/${r.id}/${r.hidden ? 'unhide' : 'hide'}`, { method: 'POST' })); close(); reviews(); }
+    catch (e) { $('#smsg').textContent = e.message; $('#rvact').disabled = false; }
+  };
 }
 
 $('#modal').onclick = e => { if (e.target.id === 'modal') { $('#modal').hidden = true; $('#sheet').style.maxWidth = ''; } };

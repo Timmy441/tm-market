@@ -5,7 +5,7 @@ const { feePercent, holdDays, minWithdrawal, orderFee } = require('./payoutRules
 
 // The ONLY support channels. The chat window never shows anything that is not listed here.
 const SUPPORT = {
-  emails: ['support@gmail.com'],
+  emails: ['tmmarketsupport@gmail.com'],
   whatsapp: { display: '+234 708 604 9886', link: 'https://wa.me/2347086049886' }
 };
 
