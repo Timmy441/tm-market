@@ -307,3 +307,13 @@ body.dark .store-logo-fallback{background:#2f2870}
 /* ---- TM Verified badge ---- */
 .verified-badge{display:inline-block;margin:2px 0 6px;padding:3px 10px;border-radius:999px;background:#e7f7ee;color:#136c3a;font-size:12px;font-weight:800;white-space:nowrap}
 body.dark .verified-badge{background:#123524;color:#7ee2a8}
+/* ---- order history (full timeline) ---- */
+.order-history{margin-top:12px;font-size:12px}
+.order-history summary{display:flex;align-items:center;min-height:36px;color:var(--violet);font-weight:800;cursor:pointer}
+.order-history-list{list-style:none;margin:8px 0 0;padding:0 0 0 14px;border-left:2px solid var(--line)}
+.order-history-list li{position:relative;display:grid;gap:2px;padding:0 0 12px 12px}
+.order-history-list li:last-child{padding-bottom:0}
+.order-history-list li:before{content:"";position:absolute;left:-20px;top:3px;width:10px;height:10px;border-radius:50%;background:var(--violet)}
+.order-history-list b{color:var(--ink);font-size:12px}
+.order-history-list small{color:var(--muted);font-size:11px}
+.order-history-list span{color:var(--text);font-size:12px;overflow-wrap:anywhere}

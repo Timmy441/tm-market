@@ -786,6 +786,37 @@ function initStorefront() {
     return wrap;
   }
 
+  const HISTORY_LABEL = {
+    confirmed: 'Payment confirmed', processing: 'Seller is preparing your order',
+    shipped: 'Order shipped', delivered: 'Delivered', cancelled: 'Order cancelled'
+  };
+  const fmtWhen = iso => {
+    const d = iso ? new Date(iso) : null;
+    return d && !isNaN(d) ? d.toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+  };
+
+  // Full step-by-step history. It shows only what the system really recorded.
+  function renderHistory(o) {
+    const rows = [{ label: 'Order placed', at: o.createdAt, note: '' }];
+    (o.events || []).forEach(e => {
+      const m = /^Delivery expected between (\d{4}-\d{2}-\d{2}) and (\d{4}-\d{2}-\d{2})$/.exec(e.note || '');
+      const a = m && dayToDate(m[1]), b = m && dayToDate(m[2]);
+      if (a && b) {
+        const text = a.getTime() === b.getTime() ? `Expected on ${fmtDay(a)}` : `Expected between ${fmtDay(a)} and ${fmtDay(b)}`;
+        rows.push({ label: 'Delivery dates updated', at: e.at, note: text });
+      } else {
+        rows.push({ label: HISTORY_LABEL[e.status] || e.status, at: e.at, note: e.note || '' });
+      }
+    });
+    const list = el('ol', { class: 'order-history-list' });
+    rows.forEach(r => {
+      const li = el('li', {}, el('b', { text: r.label }), el('small', { text: fmtWhen(r.at) }));
+      if (r.note && !/^(Payment received|Buyer confirmed delivery)$/.test(r.note)) li.append(el('span', { text: r.note }));
+      list.append(li);
+    });
+    return el('details', { class: 'order-history' }, el('summary', { text: 'See full order history' }), list);
+  }
+
   function renderOrderCard(o) {
     const card = el('article', { class: 'order-card' });
     const who = (o.seller && o.seller.storeName) || 'TM Market seller';
@@ -812,6 +843,7 @@ function initStorefront() {
       card.append(box);
     }
 
+    if (o.status !== 'pending') card.append(renderHistory(o));
     const actions = el('div', { class: 'order-actions' });
     if (o.status === 'pending') {
       const pay = el('button', { type: 'button', class: 'btn btn-primary', text: 'Pay now' });
