@@ -61,7 +61,7 @@ async function getPublicSellerStore(userId) {
     [userId]
   );
 
-  // Store rating from real, visible reviews. If the reviews table is not created yet,
+    // Store rating from real, visible reviews. If the reviews table is not created yet,
   // the store page must still load, so a failure here just means "no ratings".
   let rating = { average: null, count: 0 };
   try {
