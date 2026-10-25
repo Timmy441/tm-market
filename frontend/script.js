@@ -2179,7 +2179,7 @@ function renderSharedHeader() {
   if (!host) return;
   host.innerHTML = `<header class="site-header"><div class="container header-main header-simple">
     <a class="brand" href="homepage.html" aria-label="TM Market home"><img src="assets/logo.svg" alt="TM Market"></a>
-    <nav class="simple-nav" aria-label="Primary"><a href="homepage.html">Home</a><a href="product.html">Shop</a><a href="vendor-register.html">Sell</a></nav>
+    <nav class="simple-nav" aria-label="Primary"><a href="homepage.html">Home</a><a href="product.html">Shop</a><a href="vendor-register.html">Sell</a><a href="request-product.html">Request</a></nav>
     <div class="header-right"><a class="bag-link" href="homepage.html?cart=1">Bag (<span class="bag-count">0</span>)</a><div id="authContainer"></div></div></div></header>`;
   $$('.simple-nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href').replace(/\.html$/, '') === currentPage));
 }

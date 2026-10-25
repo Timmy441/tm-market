@@ -73,7 +73,7 @@ th{color:var(--muted);font-size:12px}tr:last-child td{border:0}tr.row{cursor:poi
 <div id="appView" hidden>
   <header><div class="wrap bar">
     <img src="assets/logo.svg" alt="TM Market">
-    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders<span class="badge" id="obadge" hidden></span></button><button class="tab" data-tab="withdrawals">Withdrawals<span class="badge" id="wbadge" hidden></span></button><button class="tab" data-tab="reviews">Reviews</button></nav>
+    <nav><button class="tab on" data-tab="dash">Dashboard</button><button class="tab" data-tab="users">Users</button><button class="tab" data-tab="products">Products</button><button class="tab" data-tab="orders">Orders<span class="badge" id="obadge" hidden></span></button><button class="tab" data-tab="withdrawals">Withdrawals<span class="badge" id="wbadge" hidden></span></button><button class="tab" data-tab="reviews">Reviews</button><button class="tab" data-tab="requests">Requests<span class="badge" id="reqBadge" hidden></span></button></nav>
     <span id="who" style="font-size:13px"></span><button class="btn" id="out">Sign out</button>
   </div></header>
   <main class="wrap" id="view"></main>
@@ -179,7 +179,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && al
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { page = 1; show(b.dataset.tab); });
 function show(t) {
   tab = t; $('#view').innerHTML = ''; document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  ({ dash, users, products, orders, withdrawals, reviews })[t]();
+  ({ dash, users, products, orders, withdrawals, reviews, requests })[t]();
 }
 const fail = e => { $('#view').innerHTML = `<div class="card err">${esc(e.message)}<br><br><button class="btn" onclick="show(tab)">Try again</button></div>`; };
 
@@ -509,5 +509,6 @@ $('#modal').onclick = e => { if (e.target.id === 'modal') { $('#modal').hidden =
   finally { $('#loader').hidden = true; lc = 0; }
 })();
 </script>
+<script src="requests.js"></script>
 </body>
 </html>
