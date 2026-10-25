@@ -120,4 +120,22 @@ async function setStatus(id, status, note, adminId) {
   return r.rowCount > 0;
 }
 
-module.exports = { createRequest, countRecent, listMine, listPublic, listAdmin, summary, getAdmin, setStatus };
+// For sellers: approved requests only, newest approval first. No customer details are ever selected.
+async function listForSellers({ limit, offset }) {
+  const rows = await pool.query(
+    `SELECT r.id, r.title, r.description, r.budget, r.location, r.status, r.created_at, r.reviewed_at,
+            c.name AS category_name, ${IMAGES}
+     ${JOINS} WHERE r.status = 'approved'
+     ORDER BY r.reviewed_at DESC NULLS LAST, r.id DESC LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  const total = await pool.query(`SELECT COUNT(*)::int AS n FROM product_requests r WHERE r.status = 'approved'`);
+  return { requests: rows.rows, total: total.rows[0].n };
+}
+
+async function deleteRequest(id) {
+  const r = await pool.query('DELETE FROM product_requests WHERE id = $1', [id]);
+  return r.rowCount > 0;
+}
+
+module.exports = { createRequest, countRecent, listMine, listPublic, listForSellers, listAdmin, summary, getAdmin, setStatus, deleteRequest };

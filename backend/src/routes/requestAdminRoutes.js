@@ -12,5 +12,6 @@ router.get('/summary', c.adminSummary);
 router.get('/', c.adminList);
 router.get('/:id', c.adminDetail);
 router.post('/:id/status', c.adminSetStatus);
+router.delete('/:id', c.adminDelete);
 
 module.exports = router;

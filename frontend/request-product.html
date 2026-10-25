@@ -30,8 +30,6 @@
 .rq-center{text-align:center;color:var(--muted);padding:22px 0}
 </style>
 <script src="script.js"></script>
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6250392225001830"
-     crossorigin="anonymous"></script>
 </head>
 <body data-page="app">
 
@@ -40,7 +38,7 @@
 <main class="rq-page">
   <section class="rq-hero">
     <h1>Can't find it? Request it.</h1>
-    <p>Tell us what you want and add at least one photo. If TM Market approves your request, it is shown below and we will try to make the product available within a few days.</p>
+    <p>Tell us what you want and add at least one photo. TM Market reviews every request first. Approved requests are shared with our sellers, so one of them can source the product and list it here within a few days.</p>
   </section>
 
   <div id="rqFormHost"></div>
@@ -50,9 +48,6 @@
     <div id="rqMine" class="rq-list"></div>
   </div>
 
-  <h2 class="rq-h2">Requested by shoppers</h2>
-  <div id="rqPublic" class="rq-list"><p class="rq-center">Loading…</p></div>
-  <div class="rq-center"><button type="button" class="btn btn-ghost" id="rqMore" hidden>Load more</button></div>
 </main>
 
 <script>
@@ -60,16 +55,14 @@
   const MAX_PHOTOS = 4;
   const host = $('#rqFormHost');
   const fmtDate = d => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
-  const LABEL = { pending: 'Pending review', approved: 'Published, we are sourcing it', rejected: 'Not approved', fulfilled: 'Now available' };
-  const PUBLIC_LABEL = { approved: 'Being sourced', fulfilled: 'Now available' };
+  const LABEL = { pending: 'Pending review', approved: 'Approved: shared with our sellers', rejected: 'Not approved', fulfilled: 'Now available' };
   let photos = [];          // File objects chosen by the customer
-  let page = 1, publicTotal = 0, publicShown = 0;
 
-  function card(r, { mine }) {
+  function card(r) {
     const img = (r.images && r.images[0]) ? `<img src="${esc(r.images[0])}" alt="" loading="lazy">` : '<div class="rq-noimg"></div>';
     const meta = [r.category_name, r.budget ? 'Budget ' + money(r.budget) : '', r.location, fmtDate(r.created_at)].filter(Boolean).map(esc).join(' · ');
-    const label = mine ? LABEL[r.status] : PUBLIC_LABEL[r.status];
-    const note = mine && r.status === 'rejected' && r.admin_note ? `<p><strong>Reason:</strong> ${esc(r.admin_note)}</p>` : '';
+    const label = LABEL[r.status];
+    const note = r.status === 'rejected' && r.admin_note ? `<p><strong>Reason:</strong> ${esc(r.admin_note)}</p>` : '';
     return `<article class="rq-item">${img}<div class="rq-body"><strong>${esc(r.title)}</strong><p>${esc(r.description)}</p><p>${meta}</p>${note}<span class="rq-pill ${esc(r.status)}">${esc(label || r.status)}</span></div></article>`;
   }
 
@@ -78,21 +71,8 @@
     try {
       const { requests } = await apiRequest('GET', '/api/requests/mine');
       $('#rqMineWrap').hidden = !requests.length;
-      $('#rqMine').innerHTML = requests.map(r => card(r, { mine: true })).join('');
+      $('#rqMine').innerHTML = requests.map(card).join('');
     } catch (err) { $('#rqMineWrap').hidden = false; $('#rqMine').innerHTML = `<p class="rq-center">${esc(err.message)}</p>`; }
-  }
-
-  async function loadPublic(reset) {
-    if (reset) { page = 1; publicShown = 0; $('#rqPublic').innerHTML = '<p class="rq-center">Loading…</p>'; } else page++;
-    try {
-      const { requests, pagination } = await apiRequest('GET', `/api/requests?limit=12&page=${page}`);
-      publicTotal = pagination.total;
-      publicShown += requests.length;
-      const html = requests.map(r => card(r, { mine: false })).join('');
-      if (reset) $('#rqPublic').innerHTML = html || '<p class="rq-center">No requests have been published yet. Be the first to ask for something.</p>';
-      else $('#rqPublic').insertAdjacentHTML('beforeend', html);
-      $('#rqMore').hidden = publicShown >= publicTotal;
-    } catch (err) { if (reset) $('#rqPublic').innerHTML = `<p class="rq-center">${esc(err.message)}</p>`; else page--; }
   }
 
   function renderThumbs() {
@@ -126,7 +106,7 @@
       <label for="rq-photos">Photos (1 to ${MAX_PHOTOS}, JPG/PNG/WebP, max 5 MB each)</label>
       <input id="rq-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple>
       <div class="rq-thumbs" id="rqThumbs"></div>
-      <p class="rq-note">Your request is sent to TM Market for review. It stays <strong>pending</strong> until it is approved, and only then is it shown publicly. Your name and contact details are never shown.</p>
+      <p class="rq-note">Your request is sent to TM Market for review. It stays <strong>pending</strong> until it is approved. Once approved it is shown only to TM Market sellers. Your name and contact details are never shown.</p>
       <p id="rqMsg" role="alert" hidden></p>
       <p><button type="submit" class="btn btn-primary" id="rqSend">Send request</button></p>
     </form>`;
@@ -170,8 +150,7 @@
     };
   }
 
-  $('#rqMore').onclick = () => loadPublic(false);
-  renderForm(); loadMine(); loadPublic(true);
+  renderForm(); loadMine();
 })();
 </script>
 </body>

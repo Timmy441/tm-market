@@ -1,4 +1,4 @@
-const { createRequest, countRecent, listMine, listPublic, listAdmin, summary, getAdmin, setStatus } = require('../models/requestModel');
+const { createRequest, countRecent, listMine, listPublic, listForSellers, listAdmin, summary, getAdmin, setStatus, deleteRequest } = require('../models/requestModel');
 const { isTrustedImageUrl, signUploadParams } = require('../utils/cloudinary');
 const { mailConfigured, sendMail } = require('../utils/mailer');
 const { findUserById } = require('../models/userModel');
@@ -128,6 +128,15 @@ async function publicRequests(req, res) {
   } catch (error) { console.error('Public requests error:', error); return bad(res, 'Unable to load requests', 500); }
 }
 
+async function sellerRequests(req, res) {
+  try {
+    const limit = Math.min(positiveInt(req.query.limit) || 20, 50);
+    const page = positiveInt(req.query.page) || 1;
+    const { requests, total } = await listForSellers({ limit, offset: (page - 1) * limit });
+    return res.status(200).json({ success: true, requests, pagination: { page, limit, total } });
+  } catch (error) { console.error('Seller requests error:', error); return bad(res, 'Unable to load requests', 500); }
+}
+
 function signRequestUpload(req, res) {
   const signed = signUploadParams('tm-market/requests');
   if (!signed) return bad(res, 'Image uploads are not available yet.', 503);
@@ -182,7 +191,17 @@ async function adminSetStatus(req, res) {
   } catch (error) { console.error('Admin request status error:', error); return bad(res, 'Unable to update request', 500); }
 }
 
+async function adminDelete(req, res) {
+  try {
+    const id = positiveInt(req.params.id);
+    if (!id) return bad(res, 'Invalid request id');
+    if (!(await deleteRequest(id))) return bad(res, 'Request not found', 404);
+    audit(req, 'request.delete', id);
+    return res.status(200).json({ success: true, message: 'Request removed' });
+  } catch (error) { console.error('Admin request delete error:', error); return bad(res, 'Unable to remove request', 500); }
+}
+
 module.exports = {
-  validateRequest, submitRequest, myRequests, publicRequests, signRequestUpload,
-  adminList, adminSummary, adminDetail, adminSetStatus
+  validateRequest, submitRequest, myRequests, sellerRequests, signRequestUpload,
+  adminList, adminSummary, adminDetail, adminSetStatus, adminDelete
 };

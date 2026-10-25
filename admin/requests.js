@@ -13,7 +13,7 @@
 
   const baseTitle = document.title;
   let rqStatus = 'pending', rqSearch = '', rqPage = 1, lastPending = null;
-  const STATUS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', fulfilled: 'Available' };
+  const STATUS = { pending: 'Pending', approved: 'Approved (sellers can see it)', rejected: 'Rejected', fulfilled: 'Available' };
 
   // Reuse the panel's own alert bar (the same one used for new orders and withdrawals).
   function alertNew(n) {
@@ -52,7 +52,7 @@
       <p>${esc(r.description)}</p><p>${meta}</p>
       <p class="rq-who">${esc(r.customer_name)} · ${esc(r.customer_email)} · ${esc(r.customer_phone || 'no phone saved')}</p>${note}
       <div class="rq-actions"><textarea id="rqn${r.id}" rows="2" maxlength="500" placeholder="Optional note for the customer (shown if you reject)"></textarea>
-      ${btn('approved', 'Approve (publish)')}${btn('fulfilled', 'Mark available')}${btn('rejected', 'Reject')}${r.status === 'pending' ? '' : btn('pending', 'Back to pending')}</div></div></div>`;
+      ${btn('approved', 'Approve (show to sellers)')}${btn('fulfilled', 'Mark available')}${btn('rejected', 'Reject')}${r.status === 'pending' ? '' : btn('pending', 'Back to pending')}<button class="btn bad" data-act="delete" data-id="${r.id}">Remove</button></div></div></div>`;
   }
 
   async function load() {
@@ -71,7 +71,7 @@
 
   window.requests = async function requests() {
     document.getElementById('view').innerHTML = `<h1>Product requests</h1>
-      <p>Customers ask for products that are not on TM Market yet. Nothing is shown publicly until you approve it.</p>
+      <p>Customers ask for products that are not on TM Market yet. Nothing is shown to sellers until you approve it. Approved requests appear in each seller's Requests tab. <b>Remove</b> deletes a request for good, so sellers and the customer no longer see it.</p>
       <div class="rq-tools"><select id="rqStatus"><option value="pending">Pending</option><option value="approved">Approved</option><option value="fulfilled">Available</option><option value="rejected">Rejected</option><option value="">All</option></select>
       <input id="rqSearch" type="search" placeholder="Search title or customer"></div>
       <div id="rqList"></div><div id="rqPager" style="margin:12px 0"></div>`;
@@ -83,7 +83,12 @@
       const b = e.target.closest('button[data-act]'); if (!b) return;
       const id = b.dataset.id, status = b.dataset.act, noteEl = document.getElementById('rqn' + id);
       try {
-        await run('Saving…', () => api(`/api/admin/requests/${id}/status`, { method: 'POST', body: JSON.stringify({ status, note: noteEl ? noteEl.value.trim() : '' }) }));
+        if (status === 'delete') {
+          if (!confirm('Remove this request for good? Sellers and the customer will no longer see it.')) return;
+          await run('Removing…', () => api(`/api/admin/requests/${id}`, { method: 'DELETE' }));
+        } else {
+          await run('Saving…', () => api(`/api/admin/requests/${id}/status`, { method: 'POST', body: JSON.stringify({ status, note: noteEl ? noteEl.value.trim() : '' }) }));
+        }
         load(); refreshBadge();
       } catch (err) { alert(err.message); }
     };

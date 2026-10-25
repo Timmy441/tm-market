@@ -1081,7 +1081,7 @@ function initStorefront() {
     const grid = $("#productGrid"), list = products;
     if (!grid) return;
     const filtering = state.filter !== "All" || !!state.query || state.onlyWishlist;
-    if ($("#resultsCount")) $("#resultsCount").textContent = `${state.total} product${state.total === 1 ? "" : "s"}`;
+    if ($("#resultsCount")) $("#resultsCount").textContent = `${state.total} product${state.total === 1 ? "" : "s"}` + (state.query ? ` for \u201c${state.query}\u201d` : "");
 
     const empty = $("#noResults");
     if (empty) {
@@ -1237,11 +1237,30 @@ function initStorefront() {
     }
   });
 
+  // The results grid is far below the header on a long page: bring it into view so typing visibly does something.
+  function showSearchResults() {
+    const target = $("#resultsCount") || $("#shop");
+    if (!target || !state.query) return;
+    const header = document.querySelector(".site-header");
+    const offset = (header ? header.offsetHeight : 0) + 8;
+    const top = target.getBoundingClientRect().top;
+    if (top > window.innerHeight * 0.45 || top < offset - 4) {
+      window.scrollTo({ top: Math.max(0, window.scrollY + top - offset), behavior: "smooth" });
+    }
+  }
+  $("#searchInput")?.addEventListener("keydown", e => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    clearTimeout(state.timer);
+    loadProducts(true);
+    showSearchResults();
+    e.target.blur();   // closes the phone keyboard
+  });
   $("#searchInput")?.addEventListener("input", e => {
     state.query = e.target.value.trim().toLowerCase();
     if ($("#clearSearch")) $("#clearSearch").hidden = !state.query;
     clearTimeout(state.timer);
-    state.timer = setTimeout(() => loadProducts(true), 300);
+    state.timer = setTimeout(() => { loadProducts(true); showSearchResults(); }, 300);
   });
   $("#clearSearch")?.addEventListener("click", resetFilters);
   $$(".chip").forEach(c => c.addEventListener("click", () => { state.filter = c.dataset.filter; applyFilters(); }));
@@ -1885,11 +1904,121 @@ function initSellerEarnings(box) {
 }
 
 /* ---------- seller orders: set delivery dates and move paid orders forward ---------- */
+/* ---------- buyer requests: what shoppers want that is not on TM Market yet (shown to sellers only) ---------- */
+const sellerReqSeenKey = () => `tm-seller-req-seen-${Auth.user().id || 'me'}`;
+function sellerReqSeen() { try { return Number(localStorage.getItem(sellerReqSeenKey())) || 0; } catch { return 0; } }
+function sellerReqMarkSeen(list) {
+  const newest = Math.max(sellerReqSeen(), ...list.map(r => Date.parse(r.reviewed_at) || 0));
+  try { localStorage.setItem(sellerReqSeenKey(), String(newest)); } catch { /* storage blocked: the popup may show again */ }
+}
+const sellerReqUnseen = list => { const seen = sellerReqSeen(); return list.filter(r => (Date.parse(r.reviewed_at) || 0) > seen); };
+
+function initSellerRequests(box) {
+  const host = $('#sellRequests'), badge = $('#reqTabBadge');
+  const state = { items: [], total: 0, page: 1, busy: false, loaded: false, visible: false, seenBefore: sellerReqSeen() };
+  const when = iso => { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; };
+
+  function setBadge() {
+    const n = sellerReqUnseen(state.items).length;
+    badge.textContent = n ? String(n) : '';
+    badge.hidden = !n;
+  }
+
+  // Jump to the product form with what the shopper asked for already filled in.
+  function supply(r) {
+    box.querySelector('[data-sell-tab="products"]')?.click();
+    const name = $('#lf-name'), desc = $('#lf-desc');
+    if (name && !name.value) name.value = String(r.title || '').slice(0, 255);
+    if (desc && !desc.value) desc.value = String(r.description || '').slice(0, 5000);
+    name?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast('Add the price and your own photos, then publish.', 4500);
+  }
+
+  function card(r) {
+    const isNew = (Date.parse(r.reviewed_at) || 0) > state.seenBefore;
+    const img = r.images && r.images[0] ? el('img', { src: r.images[0], alt: '', loading: 'lazy' }) : el('div', { class: 'br-noimg' });
+    const title = el('strong', { text: r.title });
+    if (isNew) title.append(el('span', { class: 'br-new', text: 'New' }));
+    const meta = [r.category_name, r.budget ? 'Budget ' + money(r.budget) : '', r.location, when(r.reviewed_at || r.created_at)].filter(Boolean).join(' \u00b7 ');
+    const use = el('button', { type: 'button', class: 'btn btn-primary', text: 'I can supply this' });
+    use.addEventListener('click', () => supply(r));
+    return el('article', { class: 'br-card' }, img, el('div', { class: 'br-body' }, title, el('p', { text: r.description }), el('p', { text: meta }), use));
+  }
+
+  function paint(msg) {
+    host.replaceChildren(el('p', { class: 'br-intro', text: 'Shoppers are asking for these products. If you can get one, list it in your store and they can buy it from you on TM Market. Their names and contact details are never shown.' }));
+    if (msg) { host.append(el('p', { class: 'br-status', text: msg })); return; }
+    if (!state.items.length) { host.append(el('p', { class: 'br-status', text: 'No buyer requests yet. New ones appear here once TM Market approves them.' })); return; }
+    const list = el('div', { class: 'br-list' });
+    state.items.forEach(r => list.append(card(r)));
+    host.append(list);
+    if (state.items.length < state.total) {
+      const more = el('button', { type: 'button', class: 'btn btn-ghost br-more', text: 'Load more' });
+      more.addEventListener('click', () => { state.page += 1; load(false); });
+      host.append(more);
+    }
+  }
+
+  async function load(reset) {
+    if (state.busy) return;
+    state.busy = true;
+    if (reset) { state.page = 1; if (!state.loaded) paint('Loading requests\u2026'); }
+    try {
+      const out = await apiRequest('GET', `/api/requests/seller?page=${state.page}&limit=20`);
+      const rows = Array.isArray(out.requests) ? out.requests : [];
+      state.items = reset ? rows : state.items.concat(rows);
+      state.total = out.pagination ? Number(out.pagination.total) || 0 : state.items.length;
+      state.loaded = true;
+      paint();
+      setBadge();
+      if (state.visible) { sellerReqMarkSeen(state.items); setBadge(); }
+    } catch (ex) { paint(ex.message || 'We could not load the requests. Please try again.'); }
+    finally { state.busy = false; }
+  }
+
+  load(true);   // quietly, so the tab badge is right
+  return {
+    show(on) {
+      host.hidden = !on;
+      state.visible = on;
+      if (!on) return;
+      if (!state.loaded) load(true);
+      else { sellerReqMarkSeen(state.items); setBadge(); }
+    }
+  };
+}
+
+// A small pop-up for sellers, on any page, when TM Market has approved requests they have not seen yet.
+function initSellerRequestPopup() {
+  if (document.body.dataset.page === 'landing' || !Auth.isLoggedIn() || Auth.user().role !== 'seller') return;
+  apiRequest('GET', '/api/requests/seller?limit=20').then(out => {
+    const all = Array.isArray(out.requests) ? out.requests : [];
+    const fresh = sellerReqUnseen(all);
+    if (!fresh.length || $('#brPopup')) return;
+    if (currentPage === 'vendor-register' && location.hash === '#requests') return;   // already looking at them
+    const n = fresh.length;
+    const view = el('button', { type: 'button', class: 'btn btn-primary', text: 'View requests' });
+    const later = el('button', { type: 'button', class: 'btn btn-ghost', text: 'Later' });
+    const pop = el('div', { id: 'brPopup', class: 'br-popup', role: 'status', 'aria-live': 'polite' },
+      el('strong', { text: n === 1 ? 'A shopper is asking for a product' : `${n} shoppers are asking for products` }),
+      el('p', { text: n === 1 ? `\u201c${fresh[0].title}\u201d. Can you supply it?` : 'Open your Requests tab to see what they want. Can you supply any of it?' }),
+      el('div', { class: 'br-popup-actions' }, view, later));
+    view.addEventListener('click', () => {
+      const tab = currentPage === 'vendor-register' ? $('[data-sell-tab="requests"]') : null;
+      pop.remove();
+      if (tab) tab.click(); else location.href = 'vendor-register.html#requests';
+    });
+    later.addEventListener('click', () => { sellerReqMarkSeen(all); pop.remove(); });
+    document.body.append(pop);
+  }).catch(() => { /* the pop-up is a convenience: ignore errors */ });
+}
+
 function initSellerOrders(box) {
   const host = $('#sellOrders');
   const badge = $('#ordersBadge');
   const tabs = [...box.querySelectorAll('[data-sell-tab]')];
   const earnings = initSellerEarnings(box);
+  const buyerRequests = initSellerRequests(box);
   const state = { items: [], total: 0, page: 1, busy: false, loaded: false, touched: false };
 
   const LABEL = { confirmed: 'Paid, ready to prepare', processing: 'Preparing', shipped: 'Shipped', delivered: 'Delivered' };
@@ -1906,6 +2035,7 @@ function initSellerOrders(box) {
     $('#sellProducts').hidden = name !== 'products';
     host.hidden = name !== 'orders';
     earnings.show(name === 'earnings');
+    buyerRequests.show(name === 'requests');
     if (name === 'orders' && !state.loaded) load(true);
   }
   tabs.forEach(t => t.addEventListener('click', () => { state.touched = true; showTab(t.dataset.sellTab); }));
@@ -2036,6 +2166,7 @@ function initSellerOrders(box) {
   }
 
   // Load quietly so the tab badge is right; open the Orders tab by itself if something needs shipping.
+  if (location.hash === '#requests') { state.touched = true; showTab('requests'); }
   load(true).then(() => { if (!state.touched && toShip() > 0) showTab('orders'); });
 }
 
@@ -2048,10 +2179,12 @@ async function renderSellerDashboard(root, seller) {
     <div class="sell-tabs" role="tablist">
       <button type="button" class="sell-tab" data-sell-tab="orders" role="tab">Orders <span class="sell-tab-n" id="ordersBadge" hidden></span></button>
       <button type="button" class="sell-tab" data-sell-tab="earnings" role="tab">Earnings</button>
+      <button type="button" class="sell-tab" data-sell-tab="requests" role="tab">Requests <span class="sell-tab-n" id="reqTabBadge" hidden></span></button>
       <button type="button" class="sell-tab on" data-sell-tab="products" role="tab">Products</button>
     </div>
     <section id="sellOrders" hidden></section>
     <section id="sellEarnings" hidden></section>
+    <section id="sellRequests" hidden></section>
     <div id="sellProducts">
     <form class="vendor-form" id="listingForm" novalidate>
       <h2 id="lfTitle">Add a product</h2>
@@ -2216,6 +2349,7 @@ document.addEventListener("DOMContentLoaded", () => {
   updateBagCount();
   initChatWidget();
   initBankNotice();
+  initSellerRequestPopup();
 
   // Header/account clicks (work on every page)
   document.addEventListener('click', e => {

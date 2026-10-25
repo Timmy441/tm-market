@@ -343,3 +343,19 @@ body.dark .verified-badge{background:#123524;color:#7ee2a8}
 .rv-card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rv-card-top b{color:var(--ink);font-size:13px}.rv-card-top small{margin-left:auto;color:var(--muted);font-size:12px}
 .rv-card p{margin:6px 0 0;color:var(--text);font-size:14px;overflow-wrap:anywhere;white-space:pre-line}
 @media(max-width:480px){.rv-box{padding:12px}.rv-pick{gap:2px}.rv-actions .btn{flex:1 1 auto}}
+
+/* buyer requests (sellers) */
+.br-intro{margin:0 0 14px;color:var(--muted)}
+.br-status{padding:22px 0;color:var(--muted);text-align:center}
+.br-list{display:grid;gap:12px}
+.br-card{display:flex;gap:14px;align-items:flex-start;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
+.br-card>img,.br-noimg{width:92px;height:92px;flex:none;object-fit:cover;border-radius:12px;background:var(--cream)}
+.br-body{min-width:0;flex:1}.br-body strong{display:block;color:var(--ink)}.br-body p{margin:4px 0;color:var(--muted);font-size:14px;overflow-wrap:anywhere}
+.br-new{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:99px;background:var(--violet);color:#fff;font-size:11px;font-weight:800;vertical-align:middle}
+.br-card .btn{margin-top:8px;min-height:40px;font-size:13px}.br-more{margin:14px 0 0}
+.br-popup{position:fixed;left:16px;bottom:16px;z-index:80;max-width:340px;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 12px 40px rgba(20,12,60,.28)}
+.br-popup strong{display:block;color:var(--ink)}.br-popup p{margin:6px 0 12px;color:var(--muted);font-size:14px;overflow-wrap:anywhere}
+.br-popup-actions{display:flex;flex-wrap:wrap;gap:8px}.br-popup-actions .btn{min-height:40px;font-size:13px}
+@media(max-width:520px){.br-popup{left:12px;right:12px;bottom:84px;max-width:none}.br-card{flex-direction:column}.br-card>img,.br-noimg{width:100%;height:160px}}
+.sell-tabs{overflow-x:auto;scrollbar-width:none}.sell-tabs::-webkit-scrollbar{display:none}.sell-tab{flex:none}
+@media(max-width:520px){.sell-tabs{gap:0}.sell-tab{padding:11px 10px;font-size:13px}}
