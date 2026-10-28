@@ -46,7 +46,7 @@ const FIRST_IMAGE = `(
         LIMIT 1
       ) AS image_url`;
 
-async function listProducts({ search, categoryId, categorySlug, location, minPrice, maxPrice, sort, featured, limit, offset }) {
+function buildFilters({ search, categoryId, categorySlug, location, minPrice, maxPrice, featured }) {
   const conditions = ["p.is_active = TRUE", "p.status = 'active'", "(p.seller_id IS NULL OR su.is_active = TRUE)"];
   const values = [];
 
@@ -86,6 +86,11 @@ async function listProducts({ search, categoryId, categorySlug, location, minPri
     conditions.push('p.is_featured = TRUE');
   }
 
+  return { conditions, values };
+}
+
+async function listProducts({ sort, limit, offset, ...filters }) {
+  const { conditions, values } = buildFilters(filters);
   const where = conditions.join(' AND ');
   const orderBy = LIST_SORTS[sort] || LIST_SORTS.newest;
 
@@ -110,6 +115,23 @@ async function listProducts({ search, categoryId, categorySlug, location, minPri
     products: result.rows,
     total: countResult.rows[0].total
   };
+}
+
+// Paid (sponsored) products that are running right now and match the same filters as the shop list.
+async function listSponsoredProducts(filters, limit) {
+  const { conditions, values } = buildFilters(filters);
+  conditions.push(`EXISTS (SELECT 1 FROM sponsored_listings s WHERE s.product_id = p.id AND s.status = 'active' AND s.starts_at <= NOW() AND s.ends_at > NOW())`);
+  conditions.push('(i.quantity IS NULL OR i.quantity > 0)');
+  values.push(limit);
+  const result = await pool.query(
+    `SELECT ${PRODUCT_SELECT}, ${FIRST_IMAGE}
+     ${PRODUCT_JOINS}
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY RANDOM()
+     LIMIT $${values.length}`,
+    values
+  );
+  return result.rows;
 }
 
 async function findProductById(id) {
@@ -402,6 +424,7 @@ async function removeSellerProduct(id, sellerId) {
 
 module.exports = {
   listProducts,
+  listSponsoredProducts,
   findProductById,
   createProduct,
   updateProduct,

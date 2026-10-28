@@ -5,6 +5,7 @@ const payouts = require('../controllers/payoutController');
 const refunds = require('../controllers/refundController');
 const receipts = require('../controllers/receiptController');
 const reviews = require('../controllers/reviewController');
+const promos = require('../controllers/promotionController');
 const { authenticateToken, requireAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -42,5 +43,10 @@ router.get('/withdrawals', payouts.adminList);
 router.get('/withdrawals/:id', payouts.adminDetail);
 router.post('/withdrawals/:id/paid', payouts.adminMarkPaid);
 router.post('/withdrawals/:id/reject', payouts.adminReject);
+
+router.get('/promotions', promos.adminList);
+router.post('/promotions/:id/pause', promos.adminPause);
+router.post('/promotions/:id/resume', promos.adminResume);
+router.post('/promotions/:id/remove', promos.adminRemove);
 
 module.exports = router;

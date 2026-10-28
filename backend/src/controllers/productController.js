@@ -2,11 +2,14 @@ const {
   findProductContact,
   listCategories,
   listProducts,
+  listSponsoredProducts,
   findProductById,
   createProduct,
   updateProduct,
   deactivateProduct
 } = require('../models/productModel');
+
+const { sponsoredSlots, mergeSponsored } = require('../utils/sponsored');
 
 function parsePositiveInt(value) {
   const number = Number(value);
@@ -252,18 +255,20 @@ async function getProducts(req, res) {
     const limit = Math.min(parsePositiveInt(req.query.limit) || 20, 50);
     const offset = (page - 1) * limit;
 
-    const { products, total } = await listProducts({
-      search,
-      categoryId,
-      categorySlug,
-      location,
-      minPrice,
-      maxPrice,
-      sort,
-      featured,
-      limit,
-      offset
-    });
+    const filters = { search, categoryId, categorySlug, location, minPrice, maxPrice, featured };
+    const { products: organic, total } = await listProducts({ ...filters, sort, limit, offset });
+
+    // Paid "Sponsored" items: first page only, at most 2 per 8 products. A failure here never breaks the shop.
+    let products = organic;
+    const slots = page === 1 && !featured ? sponsoredSlots(limit) : 0;
+    if (slots > 0 && typeof listSponsoredProducts === 'function') {
+      try {
+        const sponsored = await listSponsoredProducts(filters, slots);
+        products = mergeSponsored(organic, sponsored);
+      } catch (sponsoredError) {
+        console.error('Sponsored products error:', sponsoredError);
+      }
+    }
 
     return res.status(200).json({
       success: true,

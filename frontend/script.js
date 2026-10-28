@@ -40,7 +40,7 @@ function mapProduct(r) {
     id: String(r.id), name: r.name || '', category: r.category_name || 'Other',
     price, oldPrice: cmp && cmp > price ? cmp : null,
     image: r.image_url || images[0] || PLACEHOLDER_IMG, images,
-    description: r.description || '', seller: r.seller_name || '', sellerId: r.seller_id ? String(r.seller_id) : '', sellerVerified: !!r.seller_verified, location: r.location || r.seller_location || '',
+    description: r.description || '', seller: r.seller_name || '', sellerId: r.seller_id ? String(r.seller_id) : '', sellerVerified: !!r.seller_verified, sponsored: !!r.is_sponsored, location: r.location || r.seller_location || '',
     available, stock, badge: available ? '' : stock, quantity: qty,
     condition: CONDITION_LABELS[r.item_condition] ? r.item_condition : ''
   };
@@ -1063,10 +1063,11 @@ function initStorefront() {
         const data = await apiRequest("GET", `/api/products?${q}`);
         items = data.products.map(mapProduct);
         total = data.pagination ? data.pagination.total : items.length;
+        state.pages = data.pagination ? data.pagination.totalPages : 1;
       }
       if (mine !== reqId) return;                    // a newer search already replaced this one
       if (reset || state.onlyWishlist) products.splice(0, products.length, ...items);
-      else products.push(...items);
+      else products.push(...items.filter(n => !products.some(o => o.id === n.id)));   // a sponsored item may repeat on a later page
       state.total = total;
       renderProducts();
     } catch (err) {
@@ -1107,6 +1108,7 @@ function initStorefront() {
 
       card.innerHTML = `<div class="product-media">
         ${p.badge ? `<span class="badge sale">${esc(p.badge)}</span>` : ""}
+        ${p.sponsored ? '<span class="badge sponsored">Sponsored</span>' : ""}
         <button class="heart ${wished ? "active" : ""}" data-wish="${esc(p.id)}" aria-label="${wished ? "Remove" : "Add"} ${esc(p.name)}">${wished ? "♥" : "♡"}</button>
         <a href="#" data-quick="${esc(p.id)}" aria-label="View ${esc(p.name)}"><img src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy"></a>
         <button class="quick-view" data-quick="${esc(p.id)}" type="button">Quick view</button>
@@ -1129,7 +1131,7 @@ function initStorefront() {
       more = $("#loadMore");
     }
     more.disabled = false;
-    more.hidden = !!preview || state.onlyWishlist || products.length >= state.total;
+    more.hidden = !!preview || state.onlyWishlist || (state.pages ? state.page >= state.pages : products.length >= state.total);
   }
 
   function updateCounts() {
@@ -1410,7 +1412,7 @@ function initShopPage() {
   const search = $("#shopSearch"), loc = $("#shopLocation"), more = $("#shopLoadMore");
   const wanted = (params().get('category') || '').toLowerCase();
   const PAGE_SIZE = 12, SORT = { newest: 'newest', 'price-low': 'price_asc', 'price-high': 'price_desc' };
-  let page = 1, total = 0, reqId = 0, timer = null, priceCap = 0;
+  let page = 1, total = 0, pages = 1, reqId = 0, timer = null, priceCap = 0;
   const cart = () => load("tm-market-cart", []);
 
   const note = (text, isErr) => {
@@ -1426,6 +1428,7 @@ function initShopPage() {
     [img, title].forEach(n => { n.style.cursor = 'pointer'; n.addEventListener('click', open); });
     const c = el('div', { class: 'product-card' });
     if (p.badge) c.append(el('span', { class: 'badge', text: p.badge }));
+    if (p.sponsored) c.append(el('span', { class: 'badge sponsored', text: 'Sponsored' }));
     c.append(img, title);
     if (p.condition) c.append(el('p', { class: 'seller-line' }, el('span', { class: 'cond cond-' + p.condition, text: CONDITION_LABELS[p.condition] })));
     if (p.seller) c.append(el('p', { class: 'seller-info' }, document.createTextNode('Sold by: '), el('strong', { text: p.seller })));
@@ -1452,14 +1455,17 @@ function initShopPage() {
       if (mine !== reqId) return;
       const items = data.products.map(mapProduct);
       total = data.pagination ? data.pagination.total : items.length;
-      if (reset) { products.splice(0, products.length, ...items); grid.replaceChildren(); } else products.push(...items);
+      pages = data.pagination ? data.pagination.totalPages : 1;
+      let shown = items;
+      if (reset) { products.splice(0, products.length, ...items); grid.replaceChildren(); }
+      else { shown = items.filter(n => !products.some(o => o.id === n.id)); products.push(...shown); }   // a sponsored item may repeat on a later page
       if (!products.length) {
         const filtering = cats.length || search.value.trim() || loc.value.trim() || Number(range.value) < Number(range.max);
         grid.append(el('div', { class: 'empty-state' }, el('strong', { text: filtering ? 'No products match your filters' : 'No products yet' }),
           document.createTextNode(filtering ? 'Try a different category, location or price.' : 'Sellers are just getting started. Check back soon.')));
-      } else items.forEach(p => grid.append(card(p)));
+      } else shown.forEach(p => grid.append(card(p)));
       more.disabled = false;
-      more.hidden = products.length >= total;
+      more.hidden = page >= pages;
     } catch (err) {
       if (mine !== reqId) return;
       if (reset) note(err.message, true); else { page--; more.disabled = false; toast(err.message, 4000); }
@@ -2230,11 +2236,32 @@ async function renderSellerDashboard(root, seller) {
     files.forEach(f => { const i = el('img', { alt: '' }); i.src = URL.createObjectURL(f); $('#lfPreviews').appendChild(i); });
   });
 
+  // Paid promotions ("Sponsored"): plans and prices come from the server; payment happens on Paystack.
+  let promo = { plans: [], promotions: [], paymentsReady: false };
+  const promoDay = d => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+  const promoFor = id => promo.promotions.find(x => String(x.product_id) === String(id) && ['running', 'scheduled', 'paused'].includes(x.state));
+  const promoLabel = x => x.state === 'running' ? `Sponsored until ${promoDay(x.ends_at)}`
+    : x.state === 'scheduled' ? `Sponsored from ${promoDay(x.starts_at)}` : 'Promotion paused by TM Market';
+
+  async function handlePromoReturn() {
+    const q = new URLSearchParams(location.search);
+    const ref = q.get('reference') || q.get('trxref');
+    if (q.get('promoreturn') !== '1' || !ref) return;
+    const clean = new URL(location.href);
+    ['promoreturn', 'reference', 'trxref'].forEach(k => clean.searchParams.delete(k));
+    history.replaceState({}, '', clean.pathname + clean.search + clean.hash);
+    try {
+      const out = await Loader.run(() => apiRequest('GET', `/api/sellers/me/promotions/verify?reference=${encodeURIComponent(ref)}`), { text: 'Confirming payment…' });
+      toast((out && out.message) || 'Payment confirmed.', 5000);
+    } catch (ex) { toast(ex.message || 'We could not confirm the payment yet. Refresh in a minute.', 6000); }
+  }
+
   async function loadListings() {
     const host = $('#myListings');
     try {
       ({ products } = await apiRequest('GET', '/api/sellers/me/products'));
     } catch (ex) { host.innerHTML = `<p class="sell-status is-error">${esc(ex.message)}</p>`; return; }
+    try { promo = await apiRequest('GET', '/api/sellers/me/promotions'); } catch { promo = { plans: [], promotions: [], paymentsReady: false }; }
     if (!products.length) { host.innerHTML = '<p class="sell-status">You have no listings yet. Add your first product above.</p>'; return; }
     host.innerHTML = products.map(p => `
       <article class="sell-item" data-id="${p.id}">
@@ -2243,9 +2270,11 @@ async function renderSellerDashboard(root, seller) {
           <strong>${esc(p.name)}</strong>
           <span>${money(p.price)} · ${p.item_condition && CONDITION_LABELS[p.item_condition] ? esc(CONDITION_LABELS[p.item_condition]) + ' · ' : ''}${p.quantity ?? 0} in stock · ${esc(p.location || '')}</span>
           <span class="sell-badge ${esc(p.status)}">${esc(p.status)}</span>
+          ${promoFor(p.id) ? `<span class="sell-badge promo">${esc(promoLabel(promoFor(p.id)))}</span>` : ''}
         </div>
         <div class="sell-actions">
           <button type="button" data-act="edit">Edit</button>
+          ${p.status === 'active' && !promoFor(p.id) && promo.plans.length && promo.paymentsReady ? '<button type="button" data-act="promote" class="promote">Promote</button>' : ''}
           ${p.status === 'sold' ? '<button type="button" data-act="relist">Relist</button>' : '<button type="button" data-act="sold">Mark sold</button>'}
           <button type="button" data-act="delete" class="danger">Delete</button>
         </div>
@@ -2253,9 +2282,29 @@ async function renderSellerDashboard(root, seller) {
   }
 
   $('#myListings').addEventListener('click', async e => {
+    const plan = e.target.closest('button[data-plan]');
+    if (plan) {
+      plan.disabled = true;
+      try {
+        const out = await Loader.run(() => apiRequest('POST', '/api/sellers/me/promotions', { productId: Number(plan.dataset.pid), days: Number(plan.dataset.plan), callbackUrl: `${location.origin}${location.pathname}?promoreturn=1` }), { text: 'Connecting to Paystack…' });
+        if (!out.payment || !out.payment.authorizationUrl) throw new Error(out.message || 'Unable to start payment. Please try again.');
+        Loader.show('Redirecting to Paystack…');
+        location.href = out.payment.authorizationUrl;
+      } catch (ex) { toast(ex.message || 'Unable to start payment.', 5000); plan.disabled = false; }
+      return;
+    }
     const btn = e.target.closest('button[data-act]'); if (!btn) return;
     const id = btn.closest('.sell-item').dataset.id, p = products.find(x => String(x.id) === id); if (!p) return;
     try {
+      if (btn.dataset.act === 'promote') {
+        const item = btn.closest('.sell-item'), open = item.querySelector('.promo-pick');
+        if (open) { open.remove(); return; }
+        const pick = el('div', { class: 'promo-pick' });
+        pick.innerHTML = `<p><strong>Promote "${esc(p.name)}"</strong><br>Your listing gets a "Sponsored" label and shows near the top of the shop. Pay securely with Paystack.</p>` +
+          promo.plans.map(pl => `<button type="button" data-plan="${pl.days}" data-pid="${esc(p.id)}">${pl.days} days<br><b>${money(pl.price)}</b></button>`).join('');
+        item.appendChild(pick);
+        return;
+      }
       if (btn.dataset.act === 'edit') {
         editing = p; $('#lf-name').value = p.name; $('#lf-price').value = p.price; $('#lf-cat').value = p.category_id || ''; $('#lf-cond').value = p.item_condition || '';
         $('#lf-loc').value = p.location || ''; $('#lf-qty').value = p.quantity ?? 0; $('#lf-desc').value = p.description || '';
@@ -2298,7 +2347,7 @@ async function renderSellerDashboard(root, seller) {
     finally { btn.disabled = false; }
   });
 
-  loadListings();
+  handlePromoReturn().then(loadListings);
 }
 
 function updateBagCount() {

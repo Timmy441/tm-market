@@ -194,6 +194,13 @@ async function paystackWebhook(req, res) {
 
     const data = event.data || {};
     const metadata = data.metadata || {};
+    // Seller promotion payments use the same Paystack account but are not orders.
+    if (metadata.type === 'promotion') {
+      const { handlePromotionWebhook } = require('./promotionController');
+      await handlePromotionWebhook(data);
+      return res.status(200).json({ success: true });
+    }
+
     const orderId = parsePositiveInt(metadata.orderId || metadata.order_id);
     const reference = typeof data.reference === 'string' ? data.reference : '';
 

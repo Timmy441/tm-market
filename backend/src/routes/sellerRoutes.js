@@ -3,6 +3,7 @@ const express = require('express');
 const c = require('../controllers/sellerController');
 const orders = require('../controllers/orderController');
 const payouts = require('../controllers/payoutController');
+const promos = require('../controllers/promotionController');
 const { authenticateToken, requireSeller } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -34,5 +35,10 @@ router.get('/me/bank/list', authenticateToken, requireSeller, payouts.bankList);
 router.post('/me/bank/resolve', authenticateToken, requireSeller, payouts.resolveBank);
 router.put('/me/bank', authenticateToken, requireSeller, payouts.saveMyBank);
 router.post('/me/withdrawals', authenticateToken, requireSeller, payouts.requestMyWithdrawal);
+
+// Paid "Sponsored" promotions for the seller's own listings.
+router.get('/me/promotions', authenticateToken, requireSeller, promos.getMyPromotions);
+router.post('/me/promotions', authenticateToken, requireSeller, promos.startPromotion);
+router.get('/me/promotions/verify', authenticateToken, requireSeller, promos.verifyMyPromotion);
 
 module.exports = router;

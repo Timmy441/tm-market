@@ -84,6 +84,15 @@ const payoutLimiter = rateLimit({
   message: { success: false, message: 'Too many attempts. Please try again in a few minutes.' }
 });
 
+// Starting a promotion payment talks to Paystack, so it gets a tighter limit too.
+const promoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many attempts. Please try again in a few minutes.' }
+});
+
 const chatLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 60,
@@ -113,6 +122,7 @@ app.get('/api/categories', getCategories);
 app.use('/api/products', productRoutes);
 app.use('/api/sellers/me/bank', payoutLimiter);
 app.use('/api/sellers/me/withdrawals', payoutLimiter);
+app.use('/api/sellers/me/promotions', promoLimiter);
 app.use('/api/sellers', sellerRoutes);
 app.use('/api/admin/requests', adminLimiter, requestAdminRoutes);
 app.use('/api/requests', requestRoutes);
